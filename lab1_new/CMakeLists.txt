@@ -46,7 +46,25 @@ pico_enable_stdio_usb(lab1_new 0)
 
 # Add the standard library to the build
 target_link_libraries(lab1_new
-        pico_stdlib)
+        pico_stdlib
+        simple_adc 
+        pico_stdlib 
+        pico_sync
+        hardware_sync
+        hardware_clocks
+        hardware_vreg
+        hardware_clocks
+        hardware_adc
+        Audio_Timer_Interrupt_DDS 
+        pico_bootsel_via_double_reset 
+        hardware_spi 
+        hardware_timer 
+        hardware_irq
+        )
+
+#Add target sources
+#target_sources(Audio_Timer_Interrupt_DDS PRIVATE dactest.c)
+
 
 # Add the standard include files to the build
 target_include_directories(lab1_new PRIVATE
