@@ -9,24 +9,24 @@ Schedules a single thread, reads/prints ADC value
 #include "hardware/gpio.h"
 #include "hardware/timer.h"
 #include "hardware/adc.h"
-#include "hardware/irq.h"
-#include "hardware/spi.h"
 #include "pico/stdlib.h"
 #include <stdio.h>
 #include <string.h>
 #include "stdlib.h"
-#include "stdint.h"
 #include <math.h>
+#include "hardware/irq.h"
+#include "hardware/spi.h"
 
-
-
+// ==========================================
+// === protothreads globals
+// ==========================================
+// protothreads header
+#include "pt_cornell_rp2040_v1_4.h"
 
 #define LED_PIN 25
 #define ADC_PIN 26
 #define ADC_MUX 0
 
-
-//DDS defines
 
 // Low-level alarm infrastructure we'll be using
 #define ALARM_NUM 0
@@ -38,7 +38,7 @@ Schedules a single thread, reads/prints ADC value
 #define DELAY 20 // 1/Fs (in microseconds)
 // the DDS units:
 volatile unsigned int phase_accum_main;
-volatile unsigned int phase_incr_base = (two32)/Fs ;
+volatile unsigned int phase_incr_base = (two32 * 2.5)/Fs ;
 
 // SPI data
 uint16_t DAC_data ; // output value
@@ -63,8 +63,7 @@ uint16_t DAC_data ; // output value
 #define sine_table_size 256
 volatile int sin_table[sine_table_size] ;
 
-//Define adc_val
-volatile unsigned int adc_val;
+volatile unsigned int adc_val ;
 
 // Alarm ISR
 static void alarm_irq(void) {
@@ -78,12 +77,9 @@ static void alarm_irq(void) {
     // Reset the alarm register
     timer_hw->alarm[ALARM_NUM] = timer_hw->timerawl + DELAY ;
 
-    // Read the ADC
-    adc_val = adc_read() ;
-
 	// DDS phase and sine table lookup
-	phase_accum_main += phase_incr_base * adc_val ;
-    DAC_data = (DAC_config_chan_A | ((sin_table[phase_accum_main>>24] + 2048) & 0xffff))  ;
+	phase_accum_main += phase_incr_base * adc_val  ;
+    DAC_data = (DAC_config_chan_B | ((sin_table[phase_accum_main>>24] + 2048) & 0xffff))  ;
 
     // Perform an SPI transaction
     spi_write16_blocking(SPI_PORT, &DAC_data, 1) ;
@@ -93,8 +89,37 @@ static void alarm_irq(void) {
 
 }
 
+
+
+// ==================================================
+// === toggle25 thread 
+// ==================================================
+//  
+static PT_THREAD (protothread_toggle25(struct pt *pt))
+{
+    PT_BEGIN(pt);
+
+    
+
+      while(1) {
+        // toggle gpio 25
+        gpio_put(LED_PIN, !gpio_get(LED_PIN));
+
+        // Read the ADC
+        adc_val = adc_read() ;
+
+        // Print the value
+        printf("ADC value: %d\n", adc_val) ;
+
+        // Yield
+        PT_YIELD_usec(100000) ;
+      } // END WHILE(1)
+      // every thread ends with PT_END(pt);
+      PT_END(pt);
+} // end blink thread
+
 // ========================================
-// === core 0 integrated main
+// === core 0 main
 // ========================================
 int main(){
   //===  start the serial i/o ==================
@@ -108,6 +133,15 @@ int main(){
   adc_gpio_init(ADC_PIN) ;
   adc_select_input(ADC_MUX) ;
 
+  // set up LED gpio 25
+  gpio_init(LED_PIN) ;  
+  gpio_set_dir(LED_PIN, GPIO_OUT) ;
+  gpio_put(LED_PIN, true);
+
+  // === config threads ========================
+  pt_add_thread(protothread_toggle25);
+
+  //dac_test
   // Initialize stdio
     stdio_init_all();
     printf("Hello, DAC!\n");
@@ -144,9 +178,9 @@ int main(){
     // Write the lower 32 bits of the target time to the alarm register, arming it.
     timer_hw->alarm[ALARM_NUM] = timer_hw->timerawl + DELAY ;
 
-    // Nothing happening here
-    while(1){
-    }
-    return 0;
 
+
+  
+  // === initalize the scheduler ===============
+  pt_schedule_start ;
 } // end main
