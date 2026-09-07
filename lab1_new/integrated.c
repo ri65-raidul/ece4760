@@ -16,6 +16,12 @@ Schedules a single thread, reads/prints ADC value
 #include <math.h>
 #include "hardware/irq.h"
 #include "hardware/spi.h"
+#include "pico/multicore.h"
+
+#include "hardware/pio.h"
+#include "hardware/dma.h"
+#include "hardware/sync.h"
+#include "hardware/clocks.h"
 
 // ==========================================
 // === protothreads globals
@@ -23,10 +29,27 @@ Schedules a single thread, reads/prints ADC value
 // protothreads header
 #include "pt_cornell_rp2040_v1_4.h"
 
+
+// Keypad pin configurations
+#define BASE_KEYPAD_PIN 9
+#define KEYROWS         4
+#define NUMKEYS         12
+
+#define LED             25
+
 #define LED_PIN 25
 #define ADC_PIN 26
 #define ADC_MUX 0
 
+unsigned int keycodes[NUMKEYS] = {      0x57, 0x6E, 0x5E, 0x3E, 0x6D,
+                                        0x5D, 0x3D, 0x6B, 0x5B, 0x3B,
+                                        0x67, 0x37} ;
+unsigned int scancodes[KEYROWS] = {   0xE, 0xD, 0xB, 0x7} ;
+unsigned int button = 0x70 ;
+
+
+char keytext[40];
+int prev_key = 0;
 
 // Low-level alarm infrastructure we'll be using
 #define ALARM_NUM 0
@@ -65,6 +88,8 @@ volatile int sin_table[sine_table_size] ;
 
 volatile unsigned int adc_val ;
 
+volatile unsigned int gen_tone;
+
 // Alarm ISR
 static void alarm_irq(void) {
 
@@ -77,19 +102,138 @@ static void alarm_irq(void) {
     // Reset the alarm register
     timer_hw->alarm[ALARM_NUM] = timer_hw->timerawl + DELAY ;
 
-	// DDS phase and sine table lookup
-	phase_accum_main += phase_incr_base * adc_val  ;
+  if(gen_tone) {
+    // DDS phase and sine table lookup
+	  phase_accum_main += phase_incr_base * adc_val  ;
     DAC_data = (DAC_config_chan_B | ((sin_table[phase_accum_main>>24] + 2048) & 0xffff))  ;
 
     // Perform an SPI transaction
     spi_write16_blocking(SPI_PORT, &DAC_data, 1) ;
+  }
 
     // De-assert the GPIO when we leave the interrupt
     gpio_put(ISR_GPIO, 0) ;
 
 }
 
+// ==================================================
+// === scan function
+// ==================================================
+//  
+int scan() {
+        // Some variables
+        static int i ;
+        static uint32_t keypad ;
 
+        // Scan the keypad!
+        for (i=0; i<KEYROWS; i++) {
+            // Set a row high
+            gpio_put_masked((0xF << BASE_KEYPAD_PIN),
+                            (scancodes[i] << BASE_KEYPAD_PIN)) ;
+            // Small delay required
+            sleep_us(1) ;
+            // Read the keycode
+            keypad = ((gpio_get_all() >> BASE_KEYPAD_PIN) & 0x7F) ;
+            // Break if button(s) are pressed
+            if ((~keypad) & button) break ;
+        }
+        // If we found a button . . .
+        if ((~keypad) & button) {
+            // Look for a valid keycode.
+            for (i=0; i<NUMKEYS; i++) {
+                if (keypad == keycodes[i]) break ;
+            }
+            // If we don't find one, report invalid keycode
+            if (i==NUMKEYS) (i = -1) ;
+        }
+        // Otherwise, indicate invalid/non-pressed buttons
+        else (i=-1) ;
+
+        // Print key to terminal
+        printf("\n%d", i) ;
+
+        return i;
+}
+
+
+// ==================================================
+// === keypad thread
+// ==================================================
+//  
+typedef enum {
+    NOT_PRESSED,
+    MAYBE_PRESSED,
+    PRESSED,
+    MAYBE_NOT_PRESSED
+} state_t;
+
+state_t state;
+
+// This thread runs on core 0
+static PT_THREAD (protothread_core_0(struct pt *pt))
+{
+    // Indicate thread beginning
+    PT_BEGIN(pt) ;
+    static int button;
+    static int possible;
+
+    while(1) {
+
+        gpio_put(LED, !gpio_get(LED)) ;
+
+        //button = scan();
+
+        switch(state) {
+            case NOT_PRESSED:
+                printf("\n NOT_PRESSED");
+                button = scan_keypad();
+                while(button == -1) {
+                    button = scan_keypad();
+                }
+                state = MAYBE_PRESSED;
+                possible = button;
+                break;
+
+            case MAYBE_PRESSED:
+                printf("\n MAYBE_PRESSED");
+                button = scan_keypad();
+                if(button != possible){
+                    state = NOT_PRESSED;
+                }
+                else {
+                    state = PRESSED;
+                    printf("\n%d", possible);
+                }
+                break;
+
+            case PRESSED:
+                printf("\n PRESSED");
+                button = scan_keypad();
+                while(button == possible){
+                    button = scan_keypad();
+                }
+                state = MAYBE_NOT_PRESSED;
+                break;
+
+            case MAYBE_NOT_PRESSED:
+                printf("\n MAYBE_NOT_PRESSED");
+                button = scan_keypad();
+                if(button == possible){
+                    state = PRESSED;
+                }
+                else {
+                    state = NOT_PRESSED;
+                }
+                break;
+            
+            default: state = NOT_PRESSED;
+        };
+
+        PT_YIELD_usec(30000) ;
+    }
+    // Indicate thread end
+    PT_END(pt) ;
+}
 
 // ==================================================
 // === toggle25 thread 
@@ -122,11 +266,35 @@ static PT_THREAD (protothread_toggle25(struct pt *pt))
 // === core 0 main
 // ========================================
 int main(){
+  // Overclock
+    set_sys_clock_khz(150000, true) ;
+  
   //===  start the serial i/o ==================
   stdio_init_all() ;
   // announce the threader version on system reset
   // if there is a seral terminal attached
   printf("\n\rProtothreads RP2040 v1.4\n\r");
+
+  // Map LED to GPIO port, make it low
+    gpio_init(LED) ;
+    gpio_set_dir(LED, GPIO_OUT) ;
+    gpio_put(LED, 0) ;
+
+  ////////////////// KEYPAD INITS ///////////////////////
+    // Initialize the keypad GPIO's
+    gpio_init_mask((0x7F << BASE_KEYPAD_PIN)) ;
+    gpio_set_dir((BASE_KEYPAD_PIN+4), GPIO_IN);
+    gpio_set_dir((BASE_KEYPAD_PIN+5), GPIO_IN);
+    gpio_set_dir((BASE_KEYPAD_PIN+6), GPIO_IN);
+    // Set row-pins to output
+    gpio_set_dir_out_masked((0xF << BASE_KEYPAD_PIN)) ;
+    // Set all output pins to low
+    gpio_put_masked((0xF << BASE_KEYPAD_PIN), (0xF << BASE_KEYPAD_PIN)) ;
+    // Turn on pulldown resistors for column pins (on by default)
+    gpio_pull_up((BASE_KEYPAD_PIN+4)) ;
+    gpio_pull_up((BASE_KEYPAD_PIN+5)) ;
+    gpio_pull_up((BASE_KEYPAD_PIN+6)) ;
+
 
   // Setup the ADC
   adc_init() ;
@@ -138,8 +306,6 @@ int main(){
   gpio_set_dir(LED_PIN, GPIO_OUT) ;
   gpio_put(LED_PIN, true);
 
-  // === config threads ========================
-  pt_add_thread(protothread_toggle25);
 
   //dac_test
   // Initialize stdio
@@ -178,8 +344,10 @@ int main(){
     // Write the lower 32 bits of the target time to the alarm register, arming it.
     timer_hw->alarm[ALARM_NUM] = timer_hw->timerawl + DELAY ;
 
-
-
+    // === config threads ========================
+    pt_add_thread(protothread_toggle25);
+    // Add core 0 threads
+    pt_add_thread(protothread_core_0) ;
   
   // === initalize the scheduler ===============
   pt_schedule_start ;
