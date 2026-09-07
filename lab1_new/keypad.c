@@ -52,42 +52,7 @@ unsigned int button = 0x70 ;
 char keytext[40];
 int prev_key = 0;
 
-typedef enum {
-    NOT_PRESSED,
-    MAYBE_PRESSED,
-    PRESSED,
-    MAYBE_NOT_PRESSED
-} state_t;
-
-state_t state;
-// This thread runs on core 0
-static PT_THREAD (protothread_core_0(struct pt *pt))
-{
-    // Indicate thread beginning
-    PT_BEGIN(pt) ;
-
-    while(1) {
-
-        gpio_put(LED, !gpio_get(LED)) ;
-
-        switch(state) {
-            case NOT_PRESSED:
-            case MAYBE_PRESSED:
-            case PRESSED:
-            case MAYBE_NOT_PRESSED:
-        };
-
-
-
-
-        PT_YIELD_usec(30000) ;
-    }
-    // Indicate thread end
-    PT_END(pt) ;
-}
-
-
-int scan() {
+int scan_keypad(void) {
         // Some variables
         static int i ;
         static uint32_t keypad ;
@@ -116,11 +81,91 @@ int scan() {
         // Otherwise, indicate invalid/non-pressed buttons
         else (i=-1) ;
 
-        // Print key to terminal
-        printf("\n%d", i) ;
+        // // Print key to terminal
+        // printf("\n%d", i) ;
 
         return i;
 }
+
+
+
+
+typedef enum {
+    NOT_PRESSED,
+    MAYBE_PRESSED,
+    PRESSED,
+    MAYBE_NOT_PRESSED
+} state_t;
+
+state_t state;
+
+// This thread runs on core 0
+static PT_THREAD (protothread_core_0(struct pt *pt))
+{
+    // Indicate thread beginning
+    PT_BEGIN(pt) ;
+    int button;
+    int possible;
+
+    while(1) {
+
+        gpio_put(LED, !gpio_get(LED)) ;
+
+        //button = scan();
+
+        switch(state) {
+            case NOT_PRESSED:
+            
+                button = scan_keypad();
+                while(button != -1) {
+                    scan_keypad();
+                }
+                state = MAYBE_PRESSED;
+                possible = button;
+                break;
+
+            case MAYBE_PRESSED:
+                button = scan_keypad();
+                if(button != possible){
+                    state = NOT_PRESSED;
+                }
+                else {
+                    state = PRESSED;
+                    printf("%d", button);
+                }
+                break;
+
+            case PRESSED:
+                button = scan_keypad();
+                while(button == possible){
+                    button = scan_keypad();
+                }
+                state = MAYBE_NOT_PRESSED;
+                break;
+
+            case MAYBE_NOT_PRESSED:
+                button = scan_keypad();
+                if(button == possible){
+                    state = PRESSED;
+                }
+                else {
+                    state = NOT_PRESSED;
+                }
+                break;
+            
+            default: state = NOT_PRESSED;
+        };
+
+
+
+
+        PT_YIELD_usec(30000) ;
+    }
+    // Indicate thread end
+    PT_END(pt) ;
+}
+
+
 
 int main() {
 
