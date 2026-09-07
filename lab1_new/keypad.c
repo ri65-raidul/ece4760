@@ -104,8 +104,8 @@ static PT_THREAD (protothread_core_0(struct pt *pt))
 {
     // Indicate thread beginning
     PT_BEGIN(pt) ;
-    int button;
-    int possible;
+    static int button;
+    static int possible;
 
     while(1) {
 
@@ -115,27 +115,29 @@ static PT_THREAD (protothread_core_0(struct pt *pt))
 
         switch(state) {
             case NOT_PRESSED:
-            
+                printf("\n NOT_PRESSED");
                 button = scan_keypad();
-                while(button != -1) {
-                    scan_keypad();
+                while(button == -1) {
+                    button = scan_keypad();
                 }
                 state = MAYBE_PRESSED;
                 possible = button;
                 break;
 
             case MAYBE_PRESSED:
+                printf("\n MAYBE_PRESSED");
                 button = scan_keypad();
                 if(button != possible){
                     state = NOT_PRESSED;
                 }
                 else {
                     state = PRESSED;
-                    printf("%d", button);
+                    printf("\n%d", possible);
                 }
                 break;
 
             case PRESSED:
+                printf("\n PRESSED");
                 button = scan_keypad();
                 while(button == possible){
                     button = scan_keypad();
@@ -144,6 +146,7 @@ static PT_THREAD (protothread_core_0(struct pt *pt))
                 break;
 
             case MAYBE_NOT_PRESSED:
+                printf("\n MAYBE_NOT_PRESSED");
                 button = scan_keypad();
                 if(button == possible){
                     state = PRESSED;
@@ -155,9 +158,6 @@ static PT_THREAD (protothread_core_0(struct pt *pt))
             
             default: state = NOT_PRESSED;
         };
-
-
-
 
         PT_YIELD_usec(30000) ;
     }
