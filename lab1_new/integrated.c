@@ -86,10 +86,19 @@ uint16_t DAC_data ; // output value
 #define sine_table_size 256
 volatile int sin_table[sine_table_size] ;
 
+//global variables
 volatile unsigned int adc_val ;
 
 volatile int gen_tone = 0;
+volatile int record = 0;
 
+volatile int in_progress = 0;
+
+volatile int recorded[3000];
+
+volatile int count;
+
+volatile int playback = 0;
 
 // Alarm ISR
 static void alarm_irq(void) {
@@ -111,6 +120,19 @@ static void alarm_irq(void) {
     // Perform an SPI transaction
     spi_write16_blocking(SPI_PORT, &DAC_data, 1) ;
   }
+  // if(playback) {
+  //   // DDS phase and sine table lookup
+  //   for(int i = 0; i < 3000; i++) {
+  //     for (int j = 0; j < 5000; j++){
+  //       phase_accum_main += phase_incr_base * recorded[i];
+  //       DAC_data = (DAC_config_chan_B | ((sin_table[phase_accum_main>>24] + 2048) & 0xffff))  ;
+
+  //       // Perform an SPI transaction
+  //       spi_write16_blocking(SPI_PORT, &DAC_data, 1) ;
+  //     }
+  // }
+    
+  // }
 
     // De-assert the GPIO when we leave the interrupt
     gpio_put(ISR_GPIO, 0) ;
@@ -150,8 +172,8 @@ int scan_keypad() {
         // Otherwise, indicate invalid/non-pressed buttons
         else (i=-1) ;
 
-        // Print key to terminal
-        printf("\n%d", i) ;
+        // // Print key to terminal
+        // printf("\n%d", i) ;
 
         return i;
 }
@@ -177,7 +199,7 @@ static PT_THREAD (protothread_core_0(struct pt *pt))
     PT_BEGIN(pt) ;
     static int button;
     static int possible;
-   
+    static int button_stored = 0;
 
     while(1) {
 
@@ -205,20 +227,41 @@ static PT_THREAD (protothread_core_0(struct pt *pt))
                 else {
                     state = PRESSED;
                     printf("\n%d", possible);
+                    //if else for button 0
                     if(button == 0 && gen_tone != 1) 
                       gen_tone = 1;
                     else 
                       gen_tone = 0;
+                    
+                    //record mode
+                    if(button == 10){
+                      record = 1;
+                    }
+
+                    if(record && button != 0 && button != 11 && button != 10){
+                      button_stored = button;
+                      //call something to store freq
+                      in_progress = 1;
+                    }
+
+                    // if(in_progress == 0 && button == button_stored){
+                    //   playback = 1;
+                    // }
+                
+                    
                 }
                 break;
 
             case PRESSED:
                 printf("\n PRESSED");
                 button = scan_keypad();
-                while(button == possible){
+                if(button == possible){
                     button = scan_keypad();
+                    state = PRESSED;
                 }
-                state = MAYBE_NOT_PRESSED;
+                else{
+                  state = MAYBE_NOT_PRESSED;
+                }
                 break;
 
             case MAYBE_NOT_PRESSED:
@@ -229,6 +272,12 @@ static PT_THREAD (protothread_core_0(struct pt *pt))
                 }
                 else {
                     state = NOT_PRESSED;
+                    //stop recording
+                    if(in_progress){
+                      record = 0;
+                      in_progress = 0;
+                    }
+                      
                 }
                 break;
             
@@ -249,20 +298,26 @@ static PT_THREAD (protothread_toggle25(struct pt *pt))
 {
     PT_BEGIN(pt);
 
-    
-
       while(1) {
         // toggle gpio 25
         gpio_put(LED_PIN, !gpio_get(LED_PIN));
 
         // Read the ADC
         adc_val = adc_read() ;
-
-        // Print the value
-        printf("ADC value: %d\n", adc_val) ;
+        if(in_progress){
+          recorded[count] = adc_val;
+          // Print the value
+          printf("ADC value: %d\n", adc_val) ;
+          count++;
+        }
+        else{
+          count = 0;
+        }
+        
+        
 
         // Yield
-        PT_YIELD_usec(100000) ;
+        PT_YIELD_usec(10000) ;
       } // END WHILE(1)
       // every thread ends with PT_END(pt);
       PT_END(pt);
