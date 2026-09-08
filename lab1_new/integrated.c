@@ -97,8 +97,13 @@ volatile int in_progress = 0;
 volatile int recorded[3000];
 
 volatile int count;
+volatile int size;
 
 volatile int playback = 0;
+
+volatile int ind = 0;
+
+volatile int loops = 0;
 
 // Alarm ISR
 static void alarm_irq(void) {
@@ -120,19 +125,29 @@ static void alarm_irq(void) {
     // Perform an SPI transaction
     spi_write16_blocking(SPI_PORT, &DAC_data, 1) ;
   }
-  // if(playback) {
-  //   // DDS phase and sine table lookup
-  //   for(int i = 0; i < 3000; i++) {
-  //     for (int j = 0; j < 5000; j++){
-  //       phase_accum_main += phase_incr_base * recorded[i];
-  //       DAC_data = (DAC_config_chan_B | ((sin_table[phase_accum_main>>24] + 2048) & 0xffff))  ;
+  if(playback) {
 
-  //       // Perform an SPI transaction
-  //       spi_write16_blocking(SPI_PORT, &DAC_data, 1) ;
-  //     }
-  // }
+    if (ind < size) {
+      if (loops < 500) {
+        // DDS phase and sine table lookup
+        phase_accum_main += phase_incr_base * recorded[ind];
+        DAC_data = (DAC_config_chan_B | ((sin_table[phase_accum_main>>24] + 2048) & 0xffff));
+
+        // Perform an SPI transaction
+        spi_write16_blocking(SPI_PORT, &DAC_data, 1) ;
+        loops++;
+      }
+      else {
+        loops = 0;
+        ind++;
+      }
+    } else {
+      ind = 0;
+      playback = 0;
+      size = 0;
+    }
     
-  // }
+  }
 
     // De-assert the GPIO when we leave the interrupt
     gpio_put(ISR_GPIO, 0) ;
@@ -244,9 +259,9 @@ static PT_THREAD (protothread_core_0(struct pt *pt))
                       in_progress = 1;
                     }
 
-                    // if(in_progress == 0 && button == button_stored){
-                    //   playback = 1;
-                    // }
+                    if(in_progress == 0 && button == button_stored){
+                      playback = 1;
+                    }
                 
                     
                 }
@@ -307,8 +322,9 @@ static PT_THREAD (protothread_toggle25(struct pt *pt))
         if(in_progress){
           recorded[count] = adc_val;
           // Print the value
-          printf("ADC value: %d\n", adc_val) ;
+          printf("ADC value: %d\n", recorded[count]) ;
           count++;
+          size++;
         }
         else{
           count = 0;
