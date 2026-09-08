@@ -35,6 +35,7 @@ target_link_libraries( lab1_new
         pico_stdlib
         pico_stdlib 
         pico_sync
+        pico_multicore
         hardware_sync
         hardware_clocks
         hardware_vreg
@@ -44,6 +45,10 @@ target_link_libraries( lab1_new
         hardware_spi 
         hardware_timer 
         hardware_irq
+        hardware_pio
+        hardware_dma
+        hardware_sync
+        hardware_clocks
         )
 #pico_add_extra_outputs(Audio_Timer_Interrupt_DDS)
 # create map/bin/hex file etc.

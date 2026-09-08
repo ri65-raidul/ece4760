@@ -88,7 +88,8 @@ volatile int sin_table[sine_table_size] ;
 
 volatile unsigned int adc_val ;
 
-volatile unsigned int gen_tone;
+volatile int gen_tone = 0;
+
 
 // Alarm ISR
 static void alarm_irq(void) {
@@ -120,7 +121,7 @@ static void alarm_irq(void) {
 // === scan function
 // ==================================================
 //  
-int scan() {
+int scan_keypad() {
         // Some variables
         static int i ;
         static uint32_t keypad ;
@@ -176,6 +177,7 @@ static PT_THREAD (protothread_core_0(struct pt *pt))
     PT_BEGIN(pt) ;
     static int button;
     static int possible;
+   
 
     while(1) {
 
@@ -203,6 +205,10 @@ static PT_THREAD (protothread_core_0(struct pt *pt))
                 else {
                     state = PRESSED;
                     printf("\n%d", possible);
+                    if(button == 0 && gen_tone != 1) 
+                      gen_tone = 1;
+                    else 
+                      gen_tone = 0;
                 }
                 break;
 
