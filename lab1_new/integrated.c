@@ -102,12 +102,20 @@ volatile int size[9];
 volatile int playback = 0;
 
 volatile int ind = 0;
+volatile int compose_ind = 0;
 
 volatile int loops = 0;
 
 volatile int button_stored = 0;
 
 volatile int button_pressed;
+
+volatile int compose_playback = 0;
+volatile int compose_count = 0;
+
+volatile int compose_arr[20];
+
+volatile int i = 0;
 
 // Alarm ISR
 static void alarm_irq(void) {
@@ -129,7 +137,42 @@ static void alarm_irq(void) {
     // Perform an SPI transaction
     spi_write16_blocking(SPI_PORT, &DAC_data, 1) ;
   }
+  if(compose_playback) {
+    
+    //for(int i = 0; i < compose_count; i++) {
+    if(i < compose_count) {
+      
+      if (compose_ind < size[compose_arr[i] - 1]) {
+        
+        if (loops < 50) {
+          // DDS phase and sine table lookup
+          phase_accum_main += phase_incr_base * recorded[compose_arr[i] - 1][compose_ind];
+          DAC_data = (DAC_config_chan_B | ((sin_table[phase_accum_main>>24] + 2048) & 0xffff));
+
+          // Perform an SPI transaction
+          spi_write16_blocking(SPI_PORT, &DAC_data, 1) ;
+          loops++;
+        }
+        else {
+          loops = 0;
+          compose_ind++;
+        }
+      } 
+      else {
+        compose_ind = 0;
+        i++;
+      }
+      
+    } else {
+      i = 0;
+      compose_count = 0;
+      compose_playback = 0;
+    }
+      
+    
+  }
   if(playback) {
+    
 
     if (ind < size[button_pressed - 1]) {
       if (loops < 50) {
@@ -151,6 +194,8 @@ static void alarm_irq(void) {
     }
     
   }
+
+  
 
     // De-assert the GPIO when we leave the interrupt
     gpio_put(ISR_GPIO, 0) ;
@@ -217,6 +262,8 @@ static PT_THREAD (protothread_core_0(struct pt *pt))
     PT_BEGIN(pt) ;
     static int button;
     static int possible;
+    static int compose = 0;
+    
 
     while(1) {
 
@@ -224,17 +271,20 @@ static PT_THREAD (protothread_core_0(struct pt *pt))
 
         switch(state) {
             case NOT_PRESSED:
-                printf("\n NOT_PRESSED");
+                //printf("\n NOT_PRESSED");
                 button = scan_keypad();
-                while(button == -1) {
+                if(button == -1) {
                     button = scan_keypad();
                 }
-                state = MAYBE_PRESSED;
-                possible = button;
+                else {
+                  state = MAYBE_PRESSED;
+                  possible = button;
+                }
+                
                 break;
 
             case MAYBE_PRESSED:
-                printf("\n MAYBE_PRESSED");
+                //printf("\n MAYBE_PRESSED");
                 button = scan_keypad();
                 if(button != possible){
                     state = NOT_PRESSED;
@@ -263,14 +313,37 @@ static PT_THREAD (protothread_core_0(struct pt *pt))
                       playback = 1;
                       button_pressed = button;
                     }
+
+                    if (compose && button != 11){
+                      //append keys to array
+                      printf("Appending %d", button);
                       
+                      compose_arr[compose_count] = button;
+                      compose_count++;
+                    }
+                    
+                    //compose mode
+                    if(button == 11 && compose != 1){
+                      printf("Compose Mode");
+                      compose = 1;
+                    } else if (button == 11) {
+                      compose = 0;
+                      compose_playback=1;
+                      for(int i = 0; i < 20; i++){
+                        printf("Coming out of compose mode, %d", compose_arr[i]);
+                      }
+                      
+                    }
+                      
+
+                    
                 
                     
                 }
                 break;
 
             case PRESSED:
-                printf("\n PRESSED");
+                //printf("\n PRESSED");
                 button = scan_keypad();
                 if(button == possible){
                     button = scan_keypad();
@@ -282,7 +355,7 @@ static PT_THREAD (protothread_core_0(struct pt *pt))
                 break;
 
             case MAYBE_NOT_PRESSED:
-                printf("\n MAYBE_NOT_PRESSED");
+                //printf("\n MAYBE_NOT_PRESSED");
                 button = scan_keypad();
                 if(button == possible){
                     state = PRESSED;
@@ -321,6 +394,7 @@ static PT_THREAD (protothread_toggle25(struct pt *pt))
 
         // Read the ADC
         adc_val = adc_read() ;
+        printf("ADC value: %d\n", adc_val) ;
         if(in_progress){
           recorded[button_stored - 1][count] = adc_val;
           // Print the value
