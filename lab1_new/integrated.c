@@ -89,21 +89,25 @@ volatile int sin_table[sine_table_size] ;
 //global variables
 volatile unsigned int adc_val ;
 
-volatile int gen_tone = 0;
+volatile int gen_tone = 1;
 volatile int record = 0;
 
 volatile int in_progress = 0;
 
-volatile int recorded[3000];
+volatile int recorded[9][3000];
 
 volatile int count;
-volatile int size;
+volatile int size[9];
 
 volatile int playback = 0;
 
 volatile int ind = 0;
 
 volatile int loops = 0;
+
+volatile int button_stored = 0;
+
+volatile int button_pressed;
 
 // Alarm ISR
 static void alarm_irq(void) {
@@ -117,7 +121,7 @@ static void alarm_irq(void) {
     // Reset the alarm register
     timer_hw->alarm[ALARM_NUM] = timer_hw->timerawl + DELAY ;
 
-  if(gen_tone) {
+  if(gen_tone || record) {
     // DDS phase and sine table lookup
 	  phase_accum_main += phase_incr_base * adc_val  ;
     DAC_data = (DAC_config_chan_B | ((sin_table[phase_accum_main>>24] + 2048) & 0xffff))  ;
@@ -127,10 +131,10 @@ static void alarm_irq(void) {
   }
   if(playback) {
 
-    if (ind < size) {
-      if (loops < 500) {
+    if (ind < size[button_pressed - 1]) {
+      if (loops < 50) {
         // DDS phase and sine table lookup
-        phase_accum_main += phase_incr_base * recorded[ind];
+        phase_accum_main += phase_incr_base * recorded[button_pressed - 1][ind];
         DAC_data = (DAC_config_chan_B | ((sin_table[phase_accum_main>>24] + 2048) & 0xffff));
 
         // Perform an SPI transaction
@@ -144,7 +148,6 @@ static void alarm_irq(void) {
     } else {
       ind = 0;
       playback = 0;
-      size = 0;
     }
     
   }
@@ -214,13 +217,10 @@ static PT_THREAD (protothread_core_0(struct pt *pt))
     PT_BEGIN(pt) ;
     static int button;
     static int possible;
-    static int button_stored = 0;
 
     while(1) {
 
         gpio_put(LED, !gpio_get(LED)) ;
-
-        //button = scan();
 
         switch(state) {
             case NOT_PRESSED:
@@ -243,10 +243,10 @@ static PT_THREAD (protothread_core_0(struct pt *pt))
                     state = PRESSED;
                     printf("\n%d", possible);
                     //if else for button 0
-                    if(button == 0 && gen_tone != 1) 
-                      gen_tone = 1;
-                    else 
+                    if(button == 0 && gen_tone == 1) 
                       gen_tone = 0;
+                    else if (button == 0)
+                      gen_tone = 1;
                     
                     //record mode
                     if(button == 10){
@@ -259,9 +259,11 @@ static PT_THREAD (protothread_core_0(struct pt *pt))
                       in_progress = 1;
                     }
 
-                    if(in_progress == 0 && button == button_stored){
+                    if(in_progress == 0 && button != 10 && button != 0 && button != 11){
                       playback = 1;
+                      button_pressed = button;
                     }
+                      
                 
                     
                 }
@@ -320,11 +322,11 @@ static PT_THREAD (protothread_toggle25(struct pt *pt))
         // Read the ADC
         adc_val = adc_read() ;
         if(in_progress){
-          recorded[count] = adc_val;
+          recorded[button_stored - 1][count] = adc_val;
           // Print the value
           printf("ADC value: %d\n", recorded[count]) ;
           count++;
-          size++;
+          size[button_stored - 1]++;
         }
         else{
           count = 0;
