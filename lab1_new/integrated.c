@@ -61,7 +61,7 @@ int prev_key = 0;
 #define DELAY 20 // 1/Fs (in microseconds)
 // the DDS units:
 volatile unsigned int phase_accum_main;
-volatile unsigned int phase_incr_base = (two32 * 2.5)/Fs ;
+volatile unsigned int phase_incr_base = (two32)/Fs ;
 
 // SPI data
 uint16_t DAC_data ; // output value
@@ -175,7 +175,7 @@ static void alarm_irq(void) {
     
 
     if (ind < size[button_pressed - 1]) {
-      if (loops < 50) {
+      if (loops < 500) {
         // DDS phase and sine table lookup
         phase_accum_main += phase_incr_base * recorded[button_pressed - 1][ind];
         DAC_data = (DAC_config_chan_B | ((sin_table[phase_accum_main>>24] + 2048) & 0xffff));
@@ -307,6 +307,7 @@ static PT_THREAD (protothread_core_0(struct pt *pt))
                       button_stored = button;
                       //call something to store freq
                       in_progress = 1;
+                      size[button_stored - 1] = 0;
                     }
 
                     if(in_progress == 0 && button != 10 && button != 0 && button != 11){
@@ -396,6 +397,7 @@ static PT_THREAD (protothread_toggle25(struct pt *pt))
         adc_val = adc_read() ;
         printf("ADC value: %d\n", adc_val) ;
         if(in_progress){
+          
           recorded[button_stored - 1][count] = adc_val;
           // Print the value
           printf("ADC value: %d\n", recorded[count]) ;
