@@ -17,9 +17,19 @@
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
 
+volatile int count = 0;
+
 // GPIO ISR. Toggles LED
 void gpio_callback() {
-    gpio_put(25, !gpio_get(25)) ;
+    if (gpio_get(3)) {
+        // Counter Clockwise
+        count--;
+        printf("Counter: %d", count);
+    } else {
+        // clockwise
+        count++;
+        printf("Counter: %d", count);
+    }
 }
 
 int main() {
@@ -27,27 +37,14 @@ int main() {
     stdio_init_all();
     printf("GPIO interrupt\n");
 
-    // Configure GPIO interrupt
+    // Configure GPIO input 2 for interrupt
     gpio_init(2) ;
     gpio_set_dir(2, GPIO_IN) ;
     gpio_pull_down(2) ;
     gpio_set_irq_enabled_with_callback(2, GPIO_IRQ_EDGE_RISE, true, &gpio_callback);
 
-    // Set GPIO's 3 to output
-    gpio_init(3) ;
-    gpio_init(25) ;
-    gpio_set_dir(3, GPIO_OUT);
-    gpio_set_dir(25, GPIO_OUT);
-
-    // Set GPIO 3 to zero
-    gpio_put(3, 0) ;
 
     while (1) {
-        // Raise GPIO 3. This triggers an ISR
-        gpio_put(3, 1) ;
-        sleep_ms(250) ;
-        gpio_put(3, 0) ;
-        sleep_ms(250) ;
     }
 
 }
