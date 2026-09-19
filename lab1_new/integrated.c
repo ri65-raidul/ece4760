@@ -61,7 +61,8 @@ int prev_key = 0;
 #define DELAY 20 // 1/Fs (in microseconds)
 // the DDS units:
 volatile unsigned int phase_accum_main;
-volatile unsigned int phase_incr_base = (two32)/Fs ;
+// base multiplier with scaling 
+volatile unsigned int phase_incr_base = (two32 * 2.5)/Fs ;
 
 // SPI data
 uint16_t DAC_data ; // output value
@@ -86,38 +87,42 @@ uint16_t DAC_data ; // output value
 #define sine_table_size 256
 volatile int sin_table[sine_table_size] ;
 
-//global variables
+// Global variables
 volatile unsigned int adc_val ;
 
-volatile int gen_tone = 1;
+// Booleans to set modes
+volatile int gen_tone = 1; //default tone generating mode
 volatile int record = 0;
-
+volatile int compose_playback = 0;
 volatile int in_progress = 0;
-
-volatile int recorded[9][3000];
-
-volatile int count;
-volatile int size[9];
-
 volatile int playback = 0;
 
-volatile int ind = 0;
+// Record mode array variables
+volatile int recorded[9][3000];
+volatile int size[9]; //size of recording for each button
+
+// Loop variables for record mode
+volatile int record_ind = 0;
+volatile int record_loops = 0;
+
+// Loop variables for compose mode
 volatile int compose_ind = 0;
+volatile int compose_seq_button = 0;
+volatile int compose_loops = 0;
 
-volatile int loops = 0;
-
+// Button variables for FSM
 volatile int button_stored = 0;
-
 volatile int button_pressed;
 
-volatile int compose_playback = 0;
-volatile int compose_count = 0;
+// Compose mode array variables
+volatile int compose_arr_size = 0;
+volatile int compose_arr[40];
 
-volatile int compose_arr[20];
 
-volatile int i = 0;
 
-// Alarm ISR
+// ==================================================
+// === Alarm ISR
+// ==================================================
 static void alarm_irq(void) {
 
     // Assert a GPIO when we enter the interrupt
@@ -129,6 +134,7 @@ static void alarm_irq(void) {
     // Reset the alarm register
     timer_hw->alarm[ALARM_NUM] = timer_hw->timerawl + DELAY ;
 
+  // Tone Generator Mode - Default
   if(gen_tone || record) {
     // DDS phase and sine table lookup
 	  phase_accum_main += phase_incr_base * adc_val  ;
@@ -137,65 +143,72 @@ static void alarm_irq(void) {
     // Perform an SPI transaction
     spi_write16_blocking(SPI_PORT, &DAC_data, 1) ;
   }
+
+  // Compose Mode
   if(compose_playback) {
     
-    //for(int i = 0; i < compose_count; i++) {
-    if(i < compose_count) {
+    // Parses through the stored sequence of buttons
+    if(compose_seq_button < compose_arr_size) {
       
-      if (compose_ind < size[compose_arr[i] - 1]) {
+      // Goes through the recorded values for each button
+      if (compose_ind < size[compose_arr[compose_seq_button] - 1]) {
         
-        if (loops < 50) {
+        // Loops over each recorded value altering playback rate
+        if (compose_loops < 50) {
+
           // DDS phase and sine table lookup
-          phase_accum_main += phase_incr_base * recorded[compose_arr[i] - 1][compose_ind];
+          phase_accum_main += phase_incr_base * recorded[compose_arr[compose_seq_button] - 1][compose_ind];
           DAC_data = (DAC_config_chan_B | ((sin_table[phase_accum_main>>24] + 2048) & 0xffff));
 
           // Perform an SPI transaction
           spi_write16_blocking(SPI_PORT, &DAC_data, 1) ;
-          loops++;
+          compose_loops++;
         }
         else {
-          loops = 0;
+          compose_loops = 0;
           compose_ind++;
         }
       } 
       else {
         compose_ind = 0;
-        i++;
+        compose_seq_button++;
       }
       
     } else {
-      i = 0;
-      compose_count = 0;
+      compose_seq_button = 0;
+      compose_arr_size = 0;
       compose_playback = 0;
     }
-      
-    
+
   }
+
+  // Record Mode
   if(playback) {
     
+    // Parses through recorded values for the button pressed
+    if (record_ind < size[button_pressed - 1]) {
 
-    if (ind < size[button_pressed - 1]) {
-      if (loops < 500) {
+      // Loops over each recorded value altering playback rate
+      if (record_loops < 50) {
+
         // DDS phase and sine table lookup
-        phase_accum_main += phase_incr_base * recorded[button_pressed - 1][ind];
+        phase_accum_main += phase_incr_base * recorded[button_pressed - 1][record_ind];
         DAC_data = (DAC_config_chan_B | ((sin_table[phase_accum_main>>24] + 2048) & 0xffff));
 
         // Perform an SPI transaction
         spi_write16_blocking(SPI_PORT, &DAC_data, 1) ;
-        loops++;
+        record_loops++;
       }
       else {
-        loops = 0;
-        ind++;
+        record_loops = 0;
+        record_ind++;
       }
     } else {
-      ind = 0;
+      record_ind = 0;
       playback = 0;
     }
     
   }
-
-  
 
     // De-assert the GPIO when we leave the interrupt
     gpio_put(ISR_GPIO, 0) ;
@@ -205,7 +218,6 @@ static void alarm_irq(void) {
 // ==================================================
 // === scan function
 // ==================================================
-//  
 int scan_keypad() {
         // Some variables
         static int i ;
@@ -235,9 +247,6 @@ int scan_keypad() {
         // Otherwise, indicate invalid/non-pressed buttons
         else (i=-1) ;
 
-        // // Print key to terminal
-        // printf("\n%d", i) ;
-
         return i;
 }
 
@@ -245,7 +254,8 @@ int scan_keypad() {
 // ==================================================
 // === keypad thread
 // ==================================================
-//  
+
+// Defining the states
 typedef enum {
     NOT_PRESSED,
     MAYBE_PRESSED,
@@ -260,6 +270,8 @@ static PT_THREAD (protothread_core_0(struct pt *pt))
 {
     // Indicate thread beginning
     PT_BEGIN(pt) ;
+
+    // Local variables
     static int button;
     static int possible;
     static int compose = 0;
@@ -267,86 +279,95 @@ static PT_THREAD (protothread_core_0(struct pt *pt))
 
     while(1) {
 
-        gpio_put(LED, !gpio_get(LED)) ;
-
+        // FSM for debouncing
         switch(state) {
             case NOT_PRESSED:
-                //printf("\n NOT_PRESSED");
+                // Initial button scan
                 button = scan_keypad();
                 if(button == -1) {
+                    // Stays in this state while button is not pressed
                     button = scan_keypad();
                 }
                 else {
                   state = MAYBE_PRESSED;
                   possible = button;
                 }
-                
                 break;
 
             case MAYBE_PRESSED:
-                //printf("\n MAYBE_PRESSED");
+                // Initial button scan
                 button = scan_keypad();
                 if(button != possible){
+                    // Leaves state if button scanned changes
                     state = NOT_PRESSED;
                 }
                 else {
                     state = PRESSED;
                     printf("\n%d", possible);
-                    //if else for button 0
+                    
+                    // Tone generator toggled by button 0
                     if(button == 0 && gen_tone == 1) 
                       gen_tone = 0;
                     else if (button == 0)
                       gen_tone = 1;
                     
-                    //record mode
+                    // Enter record mode
                     if(button == 10){
                       record = 1;
                     }
-
+                    
+                    // When button is pressed in record mode
                     if(record && button != 0 && button != 11 && button != 10){
+                      // Store current button
                       button_stored = button;
-                      //call something to store freq
+                      // Set boolean for recording in progress
                       in_progress = 1;
+                      // SInitialize size of recording to prevent reading stale values
                       size[button_stored - 1] = 0;
                     }
 
+                    // Detects second button press indicating playback mode
                     if(in_progress == 0 && button != 10 && button != 0 && button != 11){
                       playback = 1;
                       button_pressed = button;
                     }
 
+                    // Store sequence of buttons
                     if (compose && button != 11){
-                      //append keys to array
-                      printf("Appending %d", button);
                       
-                      compose_arr[compose_count] = button;
-                      compose_count++;
+                      //============== DEBUG STATEMENT ============================
+                      printf("Appending %d", button);
+                    
+                      compose_arr[compose_arr_size] = button;
+                      compose_arr_size++;
                     }
                     
-                    //compose mode
+                    // Enter compose mode
                     if(button == 11 && compose != 1){
                       printf("Compose Mode");
                       compose = 1;
-                    } else if (button == 11) {
+                    } 
+
+                    // Leaving compose mode and start playback of stored buttons
+                    else if (button == 11) {
                       compose = 0;
                       compose_playback=1;
+
+                      //============== DEBUG STATEMENT ============================
                       for(int i = 0; i < 20; i++){
                         printf("Coming out of compose mode, %d", compose_arr[i]);
                       }
                       
                     }
-                      
-
-                    
-                
                     
                 }
                 break;
 
             case PRESSED:
-                //printf("\n PRESSED");
+                // Initial button scan
                 button = scan_keypad();
                 if(button == possible){
+                    // Stay in state while previous button matches current button
                     button = scan_keypad();
                     state = PRESSED;
                 }
@@ -356,14 +377,16 @@ static PT_THREAD (protothread_core_0(struct pt *pt))
                 break;
 
             case MAYBE_NOT_PRESSED:
-                //printf("\n MAYBE_NOT_PRESSED");
+                // Initial button scan
                 button = scan_keypad();
                 if(button == possible){
+                    // Switch state if same button as before is pressed
                     state = PRESSED;
                 }
                 else {
                     state = NOT_PRESSED;
-                    //stop recording
+                    
+                    // Stop recording if recording is in progress and button is released
                     if(in_progress){
                       record = 0;
                       in_progress = 0;
@@ -384,10 +407,10 @@ static PT_THREAD (protothread_core_0(struct pt *pt))
 // ==================================================
 // === toggle25 thread 
 // ==================================================
-//  
 static PT_THREAD (protothread_toggle25(struct pt *pt))
 {
     PT_BEGIN(pt);
+    static int count;
 
       while(1) {
         // toggle gpio 25
@@ -395,12 +418,16 @@ static PT_THREAD (protothread_toggle25(struct pt *pt))
 
         // Read the ADC
         adc_val = adc_read() ;
-        printf("ADC value: %d\n", adc_val) ;
+
+        // Storing recorded values for a button
         if(in_progress){
           
+          // Append current ADC read to array for stored button
           recorded[button_stored - 1][count] = adc_val;
-          // Print the value
-          printf("ADC value: %d\n", recorded[count]) ;
+          
+          //============== DEBUG STATEMENT ============================
+          printf("ADC value stored: %d, %d\n", recorded[button_stored - 1][count], adc_val) ;
+          
           count++;
           size[button_stored - 1]++;
         }
