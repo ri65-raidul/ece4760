@@ -61,7 +61,9 @@ pico_set_program_version(lab2_project "0.1")
 target_link_libraries(lab2_project
         pico_stdlib
         hardware_gpio
-        pico_bootsel_via_double_reset 
+        pico_divider
+        pico_multicore
+        pico_sync
         hardware_pio 
         hardware_dma 
         hardware_adc 
@@ -70,6 +72,9 @@ target_link_libraries(lab2_project
         pico_multicore
         hardware_clocks
         hardware_vreg
+        hardware_pll
+        hardware_spi
+        pico_bootsel_via_double_reset 
         )
 
 # Add the standard include files to the build
