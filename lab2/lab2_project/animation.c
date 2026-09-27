@@ -117,6 +117,13 @@ const fix15 PEG_RAD = int2fix15(6);
 const fix15 BOUNCINESS = float2fix15(0.5);
 const fix15 GRAVITY = float2fix15(0.37);
 
+const fix15 ver_sep = 19;
+const fix15 hor_sep = 38;
+volatile fix15 half_hor_sep =  19;
+
+const fix15 hor_center = 320;
+const fix15 ver_top    = 100;
+
 // Create a semaphore
 semaphore_t draw_semaphore ;
 
@@ -132,17 +139,15 @@ void spawnBoid(fix15* x, fix15* y, fix15* vx, fix15* vy, int direction)
   // if (direction) *vx = int2fix15(3) ;
   // else *vx = int2fix15(-3) ;
   // Moving down
-  *vx = float2fix15(0.01);
+  *vx = float2fix15(0.03);
   *vy = int2fix15(0) ;
 }
 
-void spawnPeg(fix15* x, fix15* y, fix15* vx, fix15* vy)
+void spawnPeg(fix15 x_pos, fix15 y_pos, fix15* x, fix15* y)
 {
   // Start in center of screen
-  *x = int2fix15(320) ;
-  *y = int2fix15(100) ;
-  *vx = int2fix15(0);
-  *vy = int2fix15(0) ;
+  *x = int2fix15(x_pos);
+  *y = int2fix15(y_pos);
 }
 
 // Detect wallstrikes, update velocity and position
@@ -297,13 +302,30 @@ static PT_THREAD (protothread_anim1(struct pt *pt))
     PT_BEGIN(pt);
 
     // Spawn a boid
-    spawnPeg(&boid1_x, &boid1_y, &boid1_vx, &boid1_vy);
+    spawnPeg(hor_center, ver_top, &boid1_x, &boid1_y);
 
     while(1) {
       // Wait for the signal from core 0
       PT_SEM_SDK_WAIT(pt, &draw_semaphore) ;
       
+      // Spawn pegs for 16 rows
+      //fix15 y_pos = ver_top;
+
+      // for (int i = 0; i <= 15; i++) {
+
+      //   fix15 x_pos = hor_center - half_hor_sep * int2fix15(i);
+
+      //   // Loop to spawn pegs in each row
+      //   for (int j = 1; j <= i; j++) {
+      //     fillCircle(fix2int15(x_pos), fix2int15(y_pos), fix2int15(PEG_RAD), color); 
+      //     spawnPeg(&x_pos, &y_pos, &boid1_vx, &boid1_vy);
+      //     x_pos += hor_sep;
+      //   }
+      //   y_pos += ver_sep;
+      // }
+
       fillCircle(fix2int15(boid1_x), fix2int15(boid1_y), fix2int15(PEG_RAD), color); 
+      //fillCircle(fix2int15(boid1_x), fix2int15(boid1_y), fix2int15(PEG_RAD), color); 
      // NEVER exit while
     } // END WHILE(1)
   PT_END(pt);
