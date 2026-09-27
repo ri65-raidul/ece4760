@@ -35,7 +35,7 @@ pico_sdk_init()
 
 
 
-add_executable(lab2_project rotary_encoder.c VGA/vga16_graphics_v3.c)
+add_executable(lab2_project animation.c VGA/vga16_graphics_v3.c)
 
 pico_generate_pio_header(lab2_project ${CMAKE_CURRENT_LIST_DIR}/VGA/hsync.pio)
 pico_generate_pio_header(lab2_project ${CMAKE_CURRENT_LIST_DIR}/VGA/vsync.pio)
