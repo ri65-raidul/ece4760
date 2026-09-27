@@ -183,49 +183,63 @@ void BouncePeg(fix15* x, fix15* y, fix15* vx, fix15* vy)
   // Update position using velocity
   *x = *x + *vx ;
   *y = *y + *vy ;
-  
-  fix15 dx = *x - int2fix15(320);
-  fix15 dy = *y - int2fix15(100);
+
+      fix15 y_pos = ver_top;
+
+      for (int i = 0; i < 16; i++) {
+
+        fix15 x_pos = hor_center - multfix15(half_hor_sep, int2fix15(i));
+
+        // Loop to spawn pegs in each row
+        for (int j = 0; j <= i; j++) {
+          fix15 dx = *x - x_pos;
+          fix15 dy = *y - y_pos;
 
 
-  if(absfix15(dx) < (sum_radius) && absfix15(dy) < (sum_radius) ) {
+          if(absfix15(dx) < (sum_radius) && absfix15(dy) < (sum_radius) ) {
 
-    fix15 dist = float2fix15(sqrtf( fix2float15(multfix15(dx, dx)) + fix2float15(multfix15(dy, dy)) ));
+            fix15 dist = float2fix15(sqrtf( fix2float15(multfix15(dx, dx)) + fix2float15(multfix15(dy, dy)) ));
 
-    printf("dx squared: %d\n", fix2int15(multfix15(dx,dx)));
-    printf("dy squared: %d\n", fix2int15(multfix15(dy,dy)));
-    //printf("Dist: %d\n", (int)(dist >> 15));
+            printf("dx squared: %d\n", fix2int15(multfix15(dx,dx)));
+            printf("dy squared: %d\n", fix2int15(multfix15(dy,dy)));
+            //printf("Dist: %d\n", (int)(dist >> 15));
 
-    if(dist < (sum_radius)){
-      printf("Enters if");
-      //Generate normal vector
-      fix15 normal_x = divfix(dx, dist);
-      fix15 normal_y = divfix(dy, dist);
+            if(dist < (sum_radius)){
+              //printf("Enters if");
+              //Generate normal vector
+              fix15 normal_x = divfix(dx, dist);
+              fix15 normal_y = divfix(dy, dist);
 
-      // Collision physics
-      fix15 intermediate_term = multfix15(int2fix15(-2), (multfix15(normal_x, *vx) + multfix15(normal_y, *vy)));
+              // Collision physics
+              fix15 intermediate_term = multfix15(int2fix15(-2), (multfix15(normal_x, *vx) + multfix15(normal_y, *vy)));
 
-      // Teleport it outside the collison distance with the peg
-      *x = int2fix15(320) + multfix15(normal_x, (sum_radius + int2fix15(1)));
-      *y = int2fix15(100) + multfix15(normal_y, (sum_radius + int2fix15(1)));
+              // Teleport it outside the collison distance with the peg
+              *x = x_pos + multfix15(normal_x, (sum_radius + int2fix15(1)));
+              *y = y_pos + multfix15(normal_y, (sum_radius + int2fix15(1)));
 
-      if(intermediate_term > 0) {
-      // Update its velocity
-      *vx = *vx + multfix15(normal_x, intermediate_term);
-      *vy = *vy + multfix15(normal_y, intermediate_term);
+              if(intermediate_term > 0) {
+              // Update its velocity
+              *vx = *vx + multfix15(normal_x, intermediate_term);
+              *vy = *vy + multfix15(normal_y, intermediate_term);
+              }
+              
+              
+              // Make a sound
+                dma_start_channel_mask(1u << ctrl_chan) ;
+
+              // Remove some energy from the ball
+              *vx = multfix15(BOUNCINESS, *vx);
+              *vy = multfix15(BOUNCINESS, *vy); 
+
+            }
+
+          }
+          x_pos += hor_sep;
+        }
+        y_pos += ver_sep;
       }
-      
-      
-      // Make a sound
-        dma_start_channel_mask(1u << ctrl_chan) ;
-
-      // Remove some energy from the ball
-      *vx = multfix15(BOUNCINESS, *vx);
-      *vy = multfix15(BOUNCINESS, *vy); 
-
-    }
-
-  }
+  
+  
   // Apply gravity
   *vy = *vy + GRAVITY;
   
