@@ -105,6 +105,23 @@ fix15 boid0_y ;
 fix15 boid0_vx ;
 fix15 boid0_vy ;
 
+// Typedef of a boid
+typedef struct {
+  fix15 boid_x ;
+  fix15 boid_y ;
+  fix15 boid_vx ;
+  fix15 boid_vy ;
+} Boid;
+
+// Array of the boid
+static Boid boids[10];
+
+// Boid on core 0
+fix15 boid0_x1 ;
+fix15 boid0_y1 ;
+fix15 boid0_vx1 ;
+fix15 boid0_vy1 ;
+
 // Boid on core 1
 fix15 boid1_x ;
 fix15 boid1_y ;
@@ -137,9 +154,34 @@ void spawnBoid(fix15* x, fix15* y, fix15* vx, fix15* vy, int direction)
   *y = int2fix15(0) ;
   
   // Moving down
-  *vx = float2fix15(0.03);
+  *vx = float2fix15(-0.03);
   *vy = int2fix15(0) ;
 }
+
+// Create a boid
+void spawnBoid1(fix15* x1, fix15* y1, fix15* vx1, fix15* vy1, int direction)
+{
+  // Start in center of screen
+  *x1 = int2fix15(320) ;
+  *y1 = int2fix15(0) ;
+  
+  // Moving down
+  *vx1 = float2fix15(0.03);
+  *vy1 = int2fix15(0) ;
+}
+
+// Create a boid
+void spawnBoidrand(fix15* x, fix15* y, fix15* vx, fix15* vy, int direction)
+{
+  // Start in center of screen
+  *x = int2fix15(320) ;
+  *y = int2fix15(0) ;
+  
+  // Moving down
+  *vx = float2fix15(0.1 * direction + 1) ;
+  *vy = int2fix15(0) ;
+}
+
 
 void spawnPeg(fix15 x_pos, fix15 y_pos, fix15* x, fix15* y)
 {
@@ -179,6 +221,10 @@ void wallsAndEdges(fix15* x, fix15* y, fix15* vx, fix15* vy)
 void BouncePeg(fix15* x, fix15* y, fix15* vx, fix15* vy)
 {
   fix15 sum_radius = BALL_RAD + PEG_RAD;
+
+  for (int i = 0; i < 10; i++) {
+
+  }
 
   // Update position using velocity
   *x = *x + *vx ;
@@ -285,8 +331,13 @@ static PT_THREAD (protothread_anim(struct pt *pt))
     PT_BEGIN(pt);
 
     // Spawn a boid
-    spawnBoid(&boid0_x, &boid0_y, &boid0_vx, &boid0_vy, 0);
+    //spawnBoid(&boid0_x, &boid0_y, &boid0_vx, &boid0_vy, 0);
+    spawnBoid1(&boid0_x1, &boid0_y1, &boid0_vx1, &boid0_vy1, 0);
 
+    // Loop to spawn the boids
+    for (int i = 0; i < 10; i++){
+      //spawnBoidrand(&boids[i].boid_x, &boids[i].boid_y, &boids[i].boid_vx, &boids[i].boid_vy, i);
+    }
     while(1) {
       // Wait for the signal that the buffer's changed
       PT_YIELD_UNTIL(pt, draw_start_signal()) ;
@@ -295,11 +346,26 @@ static PT_THREAD (protothread_anim(struct pt *pt))
       // Signal core 1 that it can start drawing
       PT_SEM_SDK_SIGNAL(pt, &draw_semaphore) ;
 
-      BouncePeg(&boid0_x, &boid0_y, &boid0_vx, &boid0_vy);
+      //BouncePeg(&boid0_x, &boid0_y, &boid0_vx, &boid0_vy);
+      BouncePeg(&boid0_x1, &boid0_y1, &boid0_vx1, &boid0_vy1);
+
+      for (int i = 0; i < 10; i++){
+        //BouncePeg(&boids[i].boid_x, &boids[i].boid_y, &boids[i].boid_vx, &boids[i].boid_vy);
+      }
       // update boid's position and velocity
-      wallsAndEdges(&boid0_x, &boid0_y, &boid0_vx, &boid0_vy) ;
+      //wallsAndEdges(&boid0_x, &boid0_y, &boid0_vx, &boid0_vy) ;
+      wallsAndEdges(&boid0_x1, &boid0_y1, &boid0_vx1, &boid0_vy1) ;
+
+      for (int i = 0; i < 10; i++){
+        //wallsAndEdges(&boids[i].boid_x, &boids[i].boid_y, &boids[i].boid_vx, &boids[i].boid_vy) ;
+      }
       // draw the boid at its new position
-      fillCircle(fix2int15(boid0_x), fix2int15(boid0_y), fix2int15(BALL_RAD), color); 
+      //fillCircle(fix2int15(boid0_x), fix2int15(boid0_y), fix2int15(BALL_RAD), color); 
+      fillCircle(fix2int15(boid0_x1), fix2int15(boid0_y1), fix2int15(BALL_RAD), color); 
+
+      for (int i = 0; i < 10; i++){
+        //fillCircle(fix2int15(boids[i].boid_x), fix2int15(boids[i].boid_y), fix2int15(BALL_RAD), color) ;
+      }
       
      // NEVER exit while
     } // END WHILE(1)
