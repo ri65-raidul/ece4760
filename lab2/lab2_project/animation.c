@@ -435,11 +435,11 @@ static PT_THREAD (protothread_anim(struct pt *pt))
       drawTextTiny8(0, 50, video_buffer, GREEN, BLACK) ;
 
 
-      // draw histogram bins (I ASSUMED X AND Y INDICATE THE TOP LEFT CORNER OF THE RECTANGLE THIS MIGHT BE WRONG)
+      // draw histogram bins
       for (int b = 0; b < 15; b++) {
         // void fillRect(short x, short y, short w, short h, char color) ;
-        // x = hor_center - half_hor_sep*15 (leftmost bin) + b*hor_sep (shift right by number of bins)
-        // y = total screen height (480) - h
+        // x (left edge) = hor_center - half_hor_sep*15 (leftmost bin) + b*hor_sep (shift right by number of bins)
+        // y (top edge) = total screen height (480) - h
         // w = hor_sep
         // h = (bins[b]/total_balls) * normalized max height (ie 100 or smth) --> how to do this without using division?
         
