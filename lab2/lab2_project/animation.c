@@ -38,8 +38,11 @@
 #include "hardware/dma.h"
 #include "hardware/clocks.h"
 #include "hardware/pll.h"
+#include "hardware/gpio.h"
 // Include protothreads
 #include "pt_cornell_rp2040_v1_4.h"
+
+#include <stdfix.h>
 
 #include "hardware/spi.h"
 
@@ -114,19 +117,20 @@ typedef struct {
 } Boid;
 
 // Array of the boid
-static Boid boids[10];
+static Boid boids[200];
 
-// Boid on core 0
-fix15 boid0_x1 ;
-fix15 boid0_y1 ;
-fix15 boid0_vx1 ;
-fix15 boid0_vy1 ;
+// // Boid on core 0
+// fix15 boid0_x1 ;
+// fix15 boid0_y1 ;
+// fix15 boid0_vx1 ;
+// fix15 boid0_vy1 ;
 
 // Boid on core 1
 fix15 boid1_x ;
 fix15 boid1_y ;
 fix15 boid1_vx ;
 fix15 boid1_vy ;
+
 
 const fix15 BALL_RAD = int2fix15(4);
 const fix15 PEG_RAD = int2fix15(6);
@@ -141,45 +145,82 @@ volatile fix15 half_hor_sep =  int2fix15(19);
 const fix15 hor_center = int2fix15(320);
 const fix15 ver_top    = int2fix15(100);
 
+// Global counters
+volatile long int active_balls = 0;
+volatile long int total_balls = 0;
+
+char buffer0[64];
+char buffer1[64];
+char video_buffer[64];
+
+
 // Create a semaphore
 semaphore_t draw_semaphore ;
 
 
+// GPIO ISR. Toggles LED
+void gpio_callback(uint gpio, uint32_t event_mask) {
+    gpio_put(25, !gpio_get(25));
+    if (!gpio_get(3)) {
+        // Counter Clockwise
+        active_balls--;
 
-// Create a boid
-void spawnBoid(fix15* x, fix15* y, fix15* vx, fix15* vy, int direction)
-{
-  // Start in center of screen
-  *x = int2fix15(320) ;
-  *y = int2fix15(0) ;
-  
-  // Moving down
-  *vx = float2fix15(-0.03);
-  *vy = int2fix15(0) ;
+    } else {
+        // clockwise
+        active_balls++;
+
+    }
+    printf("Active Balls: %d\n", active_balls);
 }
 
 // Create a boid
-void spawnBoid1(fix15* x1, fix15* y1, fix15* vx1, fix15* vy1, int direction)
-{
-  // Start in center of screen
-  *x1 = int2fix15(320) ;
-  *y1 = int2fix15(0) ;
+// void spawnBoid(fix15* x, fix15* y, fix15* vx, fix15* vy, int direction)
+// {
+//   // Start in center of screen
+//   *x = int2fix15(320) ;
+//   *y = int2fix15(0) ;
   
-  // Moving down
-  *vx1 = float2fix15(0.03);
-  *vy1 = int2fix15(0) ;
-}
+//   // Moving down
+//   *vx = float2fix15(-0.03);
+//   *vy = int2fix15(0) ;
+// }
+
+// // Create a boid
+// void spawnBoid1(fix15* x1, fix15* y1, fix15* vx1, fix15* vy1, int direction)
+// {
+//   // Start in center of screen
+//   *x1 = int2fix15(320) ;
+//   *y1 = int2fix15(0) ;
+  
+//   // Moving down
+//   *vx1 = float2fix15(0.03);
+//   *vy1 = int2fix15(0) ;
+// }
 
 // Create a boid
-void spawnBoidrand(fix15* x, fix15* y, fix15* vx, fix15* vy, int direction)
+void spawnBoidrand(fix15* x, fix15* y, fix15* vx, fix15* vy, int index)
 {
+  
   // Start in center of screen
   *x = int2fix15(320) ;
   *y = int2fix15(0) ;
+
+  //fix15 rand_fix = (((fix15)(rand() & 0xffff) >> 15) - 1 );
   
   // Moving down
-  *vx = float2fix15(0.1 * direction + 1) ;
+  //*vx = rand_fix;
+  float dir;
+  if (index%10 == 1) {
+    index = 3;
+  }
+  if (index%2==0){
+    dir = 0.01 * (index%10) + 0.01;
+  } else {
+    dir = (-1) * (0.01 * (index%10) -0.01);
+  }
+  *vx = float2fix15(dir);
   *vy = int2fix15(0) ;
+
 }
 
 
@@ -191,7 +232,7 @@ void spawnPeg(fix15 x_pos, fix15 y_pos, fix15* x, fix15* y)
 }
 
 // Detect wallstrikes, update velocity and position
-void wallsAndEdges(fix15* x, fix15* y, fix15* vx, fix15* vy)
+void wallsAndEdges(fix15* x, fix15* y, fix15* vx, fix15* vy, int direction)
 {
   // Reverse direction if we've hit a wall
   if (hitTop(*y - 15)) {
@@ -199,7 +240,8 @@ void wallsAndEdges(fix15* x, fix15* y, fix15* vx, fix15* vy)
     *y  = (*y + int2fix15(5)) ;
   }
   if (hitBottom(*y)) {
-    spawnBoid(x, y, vx, vy, 0);
+    total_balls += 1;
+    spawnBoidrand(x, y, vx, vy, direction);
   } 
   if (hitRight(*x + 15)) {
     *vx = (-*vx) ;
@@ -222,10 +264,6 @@ void BouncePeg(fix15* x, fix15* y, fix15* vx, fix15* vy)
 {
   fix15 sum_radius = BALL_RAD + PEG_RAD;
 
-  for (int i = 0; i < 10; i++) {
-
-  }
-
   // Update position using velocity
   *x = *x + *vx ;
   *y = *y + *vy ;
@@ -246,8 +284,8 @@ void BouncePeg(fix15* x, fix15* y, fix15* vx, fix15* vy)
 
             fix15 dist = float2fix15(sqrtf( fix2float15(multfix15(dx, dx)) + fix2float15(multfix15(dy, dy)) ));
 
-            printf("dx squared: %d\n", fix2int15(multfix15(dx,dx)));
-            printf("dy squared: %d\n", fix2int15(multfix15(dy,dy)));
+            // printf("dx squared: %d\n", fix2int15(multfix15(dx,dx)));
+            // printf("dy squared: %d\n", fix2int15(multfix15(dy,dy)));
             //printf("Dist: %d\n", (int)(dist >> 15));
 
             if(dist < (sum_radius)){
@@ -329,14 +367,17 @@ static PT_THREAD (protothread_anim(struct pt *pt))
 {
     // Mark beginning of thread
     PT_BEGIN(pt);
+    static uint64_t draw_time ;
+
+    draw_time = PT_GET_TIME_usec();
 
     // Spawn a boid
     //spawnBoid(&boid0_x, &boid0_y, &boid0_vx, &boid0_vy, 0);
-    spawnBoid1(&boid0_x1, &boid0_y1, &boid0_vx1, &boid0_vy1, 0);
+    //spawnBoid1(&boid0_x1, &boid0_y1, &boid0_vx1, &boid0_vy1, 0);
 
     // Loop to spawn the boids
-    for (int i = 0; i < 10; i++){
-      //spawnBoidrand(&boids[i].boid_x, &boids[i].boid_y, &boids[i].boid_vx, &boids[i].boid_vy, i);
+    for (int i = 0; i < active_balls; i++){
+      spawnBoidrand(&boids[i].boid_x, &boids[i].boid_y, &boids[i].boid_vx, &boids[i].boid_vy, i);
     }
     while(1) {
       // Wait for the signal that the buffer's changed
@@ -347,26 +388,36 @@ static PT_THREAD (protothread_anim(struct pt *pt))
       PT_SEM_SDK_SIGNAL(pt, &draw_semaphore) ;
 
       //BouncePeg(&boid0_x, &boid0_y, &boid0_vx, &boid0_vy);
-      BouncePeg(&boid0_x1, &boid0_y1, &boid0_vx1, &boid0_vy1);
+      //BouncePeg(&boid0_x1, &boid0_y1, &boid0_vx1, &boid0_vy1);
 
-      for (int i = 0; i < 10; i++){
-        //BouncePeg(&boids[i].boid_x, &boids[i].boid_y, &boids[i].boid_vx, &boids[i].boid_vy);
+      for (int i = 0; i <active_balls; i++){
+        BouncePeg(&boids[i].boid_x, &boids[i].boid_y, &boids[i].boid_vx, &boids[i].boid_vy);
       }
       // update boid's position and velocity
       //wallsAndEdges(&boid0_x, &boid0_y, &boid0_vx, &boid0_vy) ;
-      wallsAndEdges(&boid0_x1, &boid0_y1, &boid0_vx1, &boid0_vy1) ;
+      //wallsAndEdges(&boid0_x1, &boid0_y1, &boid0_vx1, &boid0_vy1) ;
 
-      for (int i = 0; i < 10; i++){
-        //wallsAndEdges(&boids[i].boid_x, &boids[i].boid_y, &boids[i].boid_vx, &boids[i].boid_vy) ;
+      for (int i = 0; i < active_balls; i++){
+        wallsAndEdges(&boids[i].boid_x, &boids[i].boid_y, &boids[i].boid_vx, &boids[i].boid_vy, i) ;
       }
       // draw the boid at its new position
       //fillCircle(fix2int15(boid0_x), fix2int15(boid0_y), fix2int15(BALL_RAD), color); 
-      fillCircle(fix2int15(boid0_x1), fix2int15(boid0_y1), fix2int15(BALL_RAD), color); 
+      //fillCircle(fix2int15(boid0_x1), fix2int15(boid0_y1), fix2int15(BALL_RAD), color); 
 
-      for (int i = 0; i < 10; i++){
-        //fillCircle(fix2int15(boids[i].boid_x), fix2int15(boids[i].boid_y), fix2int15(BALL_RAD), color) ;
+      for (int i = 0; i < active_balls; i++){
+        fillCircle(fix2int15(boids[i].boid_x), fix2int15(boids[i].boid_y), fix2int15(BALL_RAD), color) ;
       }
+
+      sprintf(buffer0, "Counter of animated balls: %d", active_balls);
+      drawTextTiny8(0, 30, buffer0, GREEN, BLACK) ;
+
+      sprintf(buffer1, "Counter of fallen balls: %d", total_balls);
+      drawTextTiny8(0, 40, buffer1, GREEN, BLACK) ;
+
+      sprintf(video_buffer, "Time: %4.1f ms", (float)(PT_GET_TIME_usec()-draw_time)/1000);
+      drawTextTiny8(0, 50, video_buffer, GREEN, BLACK) ;
       
+
      // NEVER exit while
     } // END WHILE(1)
   PT_END(pt);
@@ -456,6 +507,20 @@ int main(){
 
   // initialize VGA
   initVGA() ;
+
+  // Configure GPIO input 2 for interrupt
+  gpio_init(2) ;
+  gpio_init(3) ;
+  gpio_init(25) ;
+
+  gpio_set_dir(2, GPIO_IN) ;
+  gpio_set_dir(3, GPIO_IN) ;
+  gpio_set_dir(25,GPIO_OUT);
+
+  gpio_pull_up(2) ;
+  gpio_pull_up(3) ;
+
+  gpio_set_irq_enabled_with_callback(2, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
 
   // Initialize the semaphore
   // Arguments: pointer to sem, initial count, max count
