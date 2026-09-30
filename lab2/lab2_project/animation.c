@@ -119,6 +119,9 @@ typedef struct {
 // Array of the boid
 static Boid boids[200];
 
+// array for the histogram bins
+volatile int bins[15]; // only 15 gaps between pegs for a row of 16 pegs
+
 // // Boid on core 0
 // fix15 boid0_x1 ;
 // fix15 boid0_y1 ;
@@ -219,9 +222,9 @@ void spawnBoidrand(fix15* x, fix15* y, fix15* vx, fix15* vy, int index)
   //   dir = (-1) * (0.01 * (index%10) -0.01);
   // }
 
-  fix15 random = (rand() & 0xFFFF) - int2fix15(1);
+  //fix15 random = (rand() & 0xFFFF) - int2fix15(1);
   //*vx = float2fix15(dir);
-  *vx = (rand() & 0xFFFF) - int2fix15(1);
+  *vx = (rand() & 0xFFFF) - int2fix15(1); // may want to adjust these bounds
   *vy = int2fix15(0) ;
 
 }
@@ -244,7 +247,15 @@ void wallsAndEdges(fix15* x, fix15* y, fix15* vx, fix15* vy, int direction)
   }
   if (hitBottom(*y)) {
     total_balls += 1;
-    // count which bin it went into
+    // check which bin it went into for the histogram
+    for (int b = 0; b < 15; b++) {
+      // each bin has width hor_sep and left side starts at x = hor_center - half_hor_sep * 15 (for row 16)
+      if (fix2int15(*x) > ((hor_center - half_hor_sep * 15) + b*hor_sep)
+          && fix2int15(*x) < ((hor_center - half_hor_sep * 15) + (b+1)*hor_sep)) {
+        bins[b] += 1; // increment the number of balls that have fallen into bin b
+      }
+    }
+
     spawnBoidrand(x, y, vx, vy, direction);
   } 
   if (hitRight(*x + 15)) {
@@ -422,6 +433,20 @@ static PT_THREAD (protothread_anim(struct pt *pt))
 
       sprintf(video_buffer, "Time: %4.1f ms", (float)(PT_GET_TIME_usec()-draw_time)/1000);
       drawTextTiny8(0, 50, video_buffer, GREEN, BLACK) ;
+
+
+      // draw histogram bins (I ASSUMED X AND Y INDICATE THE TOP LEFT CORNER OF THE RECTANGLE THIS MIGHT BE WRONG)
+      for (int b = 0; b < 15; b++) {
+        // void fillRect(short x, short y, short w, short h, char color) ;
+        // x = hor_center - half_hor_sep*15 (leftmost bin) + b*hor_sep (shift right by number of bins)
+        // y = total screen height (480) - h
+        // w = hor_sep
+        // h = (bins[b]/total_balls) * normalized max height (ie 100 or smth) --> how to do this without using division?
+        
+        // int height = (bins[b] / total_balls) * 100; // normalized height; maybe int division is ok
+        int height = bins[b]; // not normalized!!
+        fillRect((hor_center - half_hor_sep*15) + (b*hor_sep), 480 - height, hor_sep, height, GREEN);
+      }
       
 
      // NEVER exit while
