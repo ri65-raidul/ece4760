@@ -143,7 +143,7 @@ const fix15 hor_sep = int2fix15(38);
 volatile fix15 half_hor_sep =  int2fix15(19);
 
 const fix15 hor_center = int2fix15(320);
-const fix15 ver_top    = int2fix15(100);
+const fix15 ver_top    = int2fix15(50);
 
 // Global counters
 volatile long int active_balls = 0;
@@ -207,18 +207,21 @@ void spawnBoidrand(fix15* x, fix15* y, fix15* vx, fix15* vy, int index)
 
   //fix15 rand_fix = (((fix15)(rand() & 0xffff) >> 15) - 1 );
   
-  // Moving down
-  //*vx = rand_fix;
-  float dir;
-  if (index%10 == 1) {
-    index = 3;
-  }
-  if (index%2==0){
-    dir = 0.01 * (index%10) + 0.01;
-  } else {
-    dir = (-1) * (0.01 * (index%10) -0.01);
-  }
-  *vx = float2fix15(dir);
+  // // Moving down
+  // //*vx = rand_fix;
+  // float dir;
+  // if (index%10 == 1) {
+  //   index = 3;
+  // }
+  // if (index%2==0){
+  //   dir = 0.01 * (index%10) + 0.01;
+  // } else {
+  //   dir = (-1) * (0.01 * (index%10) -0.01);
+  // }
+
+  fix15 random = (rand() & 0xFFFF) - int2fix15(1);
+  //*vx = float2fix15(dir);
+  *vx = (rand() & 0xFFFF) - int2fix15(1);
   *vy = int2fix15(0) ;
 
 }
@@ -241,6 +244,7 @@ void wallsAndEdges(fix15* x, fix15* y, fix15* vx, fix15* vy, int direction)
   }
   if (hitBottom(*y)) {
     total_balls += 1;
+    // count which bin it went into
     spawnBoidrand(x, y, vx, vy, direction);
   } 
   if (hitRight(*x + 15)) {
@@ -376,7 +380,9 @@ static PT_THREAD (protothread_anim(struct pt *pt))
     //spawnBoid1(&boid0_x1, &boid0_y1, &boid0_vx1, &boid0_vy1, 0);
 
     // Loop to spawn the boids
-    for (int i = 0; i < active_balls; i++){
+    
+    // spawn active balls
+    for (int i = 0; i < active_balls; i++) {
       spawnBoidrand(&boids[i].boid_x, &boids[i].boid_y, &boids[i].boid_vx, &boids[i].boid_vy, i);
     }
     while(1) {
@@ -390,14 +396,14 @@ static PT_THREAD (protothread_anim(struct pt *pt))
       //BouncePeg(&boid0_x, &boid0_y, &boid0_vx, &boid0_vy);
       //BouncePeg(&boid0_x1, &boid0_y1, &boid0_vx1, &boid0_vy1);
 
-      for (int i = 0; i <active_balls; i++){
+      for (int i = 0; i < active_balls; i++){
         BouncePeg(&boids[i].boid_x, &boids[i].boid_y, &boids[i].boid_vx, &boids[i].boid_vy);
       }
       // update boid's position and velocity
       //wallsAndEdges(&boid0_x, &boid0_y, &boid0_vx, &boid0_vy) ;
       //wallsAndEdges(&boid0_x1, &boid0_y1, &boid0_vx1, &boid0_vy1) ;
 
-      for (int i = 0; i < active_balls; i++){
+      for (int i = 0; i < active_balls; i++) {
         wallsAndEdges(&boids[i].boid_x, &boids[i].boid_y, &boids[i].boid_vx, &boids[i].boid_vy, i) ;
       }
       // draw the boid at its new position
@@ -448,7 +454,6 @@ static PT_THREAD (protothread_anim1(struct pt *pt))
         }
         y_pos += ver_sep;
       }
-
 
     
 
@@ -525,6 +530,14 @@ int main(){
   // Initialize the semaphore
   // Arguments: pointer to sem, initial count, max count
   sem_init(&draw_semaphore, 0, 1) ;
+
+  // initialize all boid values
+  // for (int i = 0; i < 10; i++) { // hard coded array length
+  //   boids[i].boid_x = 320;
+  //   boids[i].boid_y = 0;
+  //   boids[i].boid_vx = 0.001; // randomization - change later
+  //   boids[i].boid_vy = 0;
+  // }
 
 
   //==================================== DAC SECTION =========================================
