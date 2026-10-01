@@ -399,7 +399,7 @@ int isAlive(short x, short y) {
 
 // vertical line
 void drawVLine(short x, short y, short h, char color) {
-    for (short i=y; i<(y+h); i++) {
+    for (short i=y; i>(y-h); i--) {
         drawPixel(x, i, color) ;
     }
 }
@@ -504,7 +504,7 @@ void drawRect(short x, short y, short w, short h, char color) {
  * Returns: Nothing
  */
   drawHLine(x, y, w, color);
-  drawHLine(x, y+h-1, w, color);
+  drawHLine(x, y-h-1, w, color);
   drawVLine(x, y, h, color);
   drawVLine(x+w-1, y, h, color);
 }
@@ -735,9 +735,9 @@ void fillRect(short x, short y, short w, short h, char color) {
  *      color:  3-bit color value
  * Returns:     Nothing
  */
-   if((y + h - 1) >= _height) h = _height - y - 1;
+   //if((y + h - 1) >= _height) h = _height - y - 1;
 
-  for(int j=y; j<(y+h); j++) {
+  for(int j=y; j>(y-h); j--) {
     drawHLine(x, j, w, color) ;
   }
 }

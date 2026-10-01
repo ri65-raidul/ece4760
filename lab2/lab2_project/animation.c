@@ -117,10 +117,11 @@ typedef struct {
 } Boid;
 
 // Array of the boid
-static Boid boids[200];
+static Boid boids[500];
 
 // array for the histogram bins
 volatile int bins[15]; // only 15 gaps between pegs for a row of 16 pegs
+volatile int bins_max;
 
 
 // Boid on core 1
@@ -159,10 +160,11 @@ semaphore_t draw_semaphore ;
 
 // GPIO ISR. Toggles LED
 void gpio_callback(uint gpio, uint32_t event_mask) {
-    gpio_put(25, !gpio_get(25));
     if (!gpio_get(3)) {
         // Counter Clockwise
-        active_balls--;
+        if (active_balls > 0){
+          active_balls--;
+        }
 
     } else {
         // clockwise
@@ -206,7 +208,20 @@ void wallsAndEdges(fix15* x, fix15* y, fix15* vx, fix15* vy)
   }
   if (hitBottom(*y)) {
     total_balls += 1;
-    // count which bin it went into
+    
+    for (int b = 0; b < 15; b++) {
+      if ((fix2int15(*x) > 35 + b * 38) && (fix2int15(*x) < 35 + (b + 1)*38)) {
+        bins[b] += 1;
+        printf("Bins[b]: %d\n", bins[b]);
+        // Updating bins max
+        if (bins[b] > bins_max) {
+          bins_max = bins[b];
+          printf("Bins Max: %d\n", bins_max);
+        }
+      }
+    }
+
+    
     spawnBoidrand(x, y, vx, vy);
   } 
   if (hitRight(*x + 15)) {
@@ -240,7 +255,7 @@ void BouncePeg(fix15* x, fix15* y, fix15* vx, fix15* vy)
 
         fix15 x_pos = hor_center - multfix15(half_hor_sep, int2fix15(i));
 
-        // Loop to spawn pegs in each row
+        // Loop through each pegs in each row
         for (int j = 0; j <= i; j++) {
           fix15 dx = *x - x_pos;
           fix15 dy = *y - y_pos;
@@ -350,29 +365,26 @@ static PT_THREAD (protothread_anim(struct pt *pt))
       }
 
       for (int i = 0; i < prev_act_balls; i++){
-        BouncePeg(&boids[i].boid_x, &boids[i].boid_y, &boids[i].boid_vx, &boids[i].boid_vy);
+          BouncePeg(&boids[i].boid_x, &boids[i].boid_y, &boids[i].boid_vx, &boids[i].boid_vy);
+
       }
 
       for (int i = 0; i < prev_act_balls; i++) {
-        wallsAndEdges(&boids[i].boid_x, &boids[i].boid_y, &boids[i].boid_vx, &boids[i].boid_vy) ;
+           wallsAndEdges(&boids[i].boid_x, &boids[i].boid_y, &boids[i].boid_vx, &boids[i].boid_vy) ;
       }
 
       for (int i = 0; i < prev_act_balls; i++){
-        fillCircle(fix2int15(boids[i].boid_x), fix2int15(boids[i].boid_y), fix2int15(BALL_RAD), color) ;
+           fillCircle(fix2int15(boids[i].boid_x), fix2int15(boids[i].boid_y), fix2int15(BALL_RAD), GREEN) ;
       }
 
-            // draw histogram bins
-      for (int b = 0; b < 15; b++) {
-        // void fillRect(short x, short y, short w, short h, char color) ;
-        // x (left edge) = hor_center - half_hor_sep*15 (leftmost bin) + b*hor_sep (shift right by number of bins)
-        // y (top edge) = total screen height (480) - h
-        // w = hor_sep
-        // h = (bins[b]/total_balls) * normalized max height (ie 100 or smth) --> how to do this without using division?
+      
+      for(int i = 0; i < 15; i++){
         
-        // int height = (bins[b] / total_balls) * 100; // normalized height; maybe int division is ok
-        int height = bins[b]; // not normalized!!
-        fillRect((hor_center - half_hor_sep*15) + (b*hor_sep), 480 - height, hor_sep, height, GREEN);
+        fillRect(35 + (i * 38), 460, 36, (bins[i]*100)/bins_max, GREEN);
+        //printf("bins[%d] height: %d\n", i, (bins[i]*100)/bins_max);
+
       }
+      
       
 
      // NEVER exit while
@@ -551,6 +563,13 @@ int main(){
   //==================================== DAC SECTION =========================================
 
 
+  //initialize all boid values
+  for (int i = 0; i < 500; i++) { // hard coded array length
+    boids[i].boid_x = int2fix15(320);
+    boids[i].boid_y = int2fix15(0);
+    boids[i].boid_vx = int2fix15(0); // randomization - change later
+    boids[i].boid_vy = int2fix15(0);
+  }
   // start core 1 
   multicore_reset_core1();
   multicore_launch_core1(&core1_main);
