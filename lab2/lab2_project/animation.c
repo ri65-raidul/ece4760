@@ -147,6 +147,7 @@ const fix15 ver_top    = int2fix15(50);
 
 // Global counters
 volatile long int active_balls = 0;
+volatile long int prev_act_balls = 0;
 volatile long int total_balls = 0;
 
 char buffer0[64];
@@ -198,7 +199,7 @@ void gpio_callback(uint gpio, uint32_t event_mask) {
 // }
 
 // Create a boid
-void spawnBoidrand(fix15* x, fix15* y, fix15* vx, fix15* vy, int index)
+void spawnBoidrand(fix15* x, fix15* y, fix15* vx, fix15* vy)
 {
   
   // Start in center of screen
@@ -219,7 +220,6 @@ void spawnBoidrand(fix15* x, fix15* y, fix15* vx, fix15* vy, int index)
   //   dir = (-1) * (0.01 * (index%10) -0.01);
   // }
 
-  fix15 random = (rand() & 0xFFFF) - int2fix15(1);
   //*vx = float2fix15(dir);
   *vx = (rand() & 0xFFFF) - int2fix15(1);
   *vy = int2fix15(0) ;
@@ -235,7 +235,7 @@ void spawnPeg(fix15 x_pos, fix15 y_pos, fix15* x, fix15* y)
 }
 
 // Detect wallstrikes, update velocity and position
-void wallsAndEdges(fix15* x, fix15* y, fix15* vx, fix15* vy, int direction)
+void wallsAndEdges(fix15* x, fix15* y, fix15* vx, fix15* vy)
 {
   // Reverse direction if we've hit a wall
   if (hitTop(*y - 15)) {
@@ -245,7 +245,7 @@ void wallsAndEdges(fix15* x, fix15* y, fix15* vx, fix15* vy, int direction)
   if (hitBottom(*y)) {
     total_balls += 1;
     // count which bin it went into
-    spawnBoidrand(x, y, vx, vy, direction);
+    spawnBoidrand(x, y, vx, vy);
   } 
   if (hitRight(*x + 15)) {
     *vx = (-*vx) ;
@@ -371,9 +371,7 @@ static PT_THREAD (protothread_anim(struct pt *pt))
 {
     // Mark beginning of thread
     PT_BEGIN(pt);
-    static uint64_t draw_time ;
-
-    draw_time = PT_GET_TIME_usec();
+    
 
     // Spawn a boid
     //spawnBoid(&boid0_x, &boid0_y, &boid0_vx, &boid0_vy, 0);
@@ -381,10 +379,10 @@ static PT_THREAD (protothread_anim(struct pt *pt))
 
     // Loop to spawn the boids
     
-    // spawn active balls
-    for (int i = 0; i < active_balls; i++) {
-      spawnBoidrand(&boids[i].boid_x, &boids[i].boid_y, &boids[i].boid_vx, &boids[i].boid_vy, i);
-    }
+    // // spawn active balls
+    // for (int i = 0; i < active_balls; i++) {
+    //   spawnBoidrand(&boids[i].boid_x, &boids[i].boid_y, &boids[i].boid_vx, &boids[i].boid_vy);
+    // }
     while(1) {
       // Wait for the signal that the buffer's changed
       PT_YIELD_UNTIL(pt, draw_start_signal()) ;
@@ -396,32 +394,28 @@ static PT_THREAD (protothread_anim(struct pt *pt))
       //BouncePeg(&boid0_x, &boid0_y, &boid0_vx, &boid0_vy);
       //BouncePeg(&boid0_x1, &boid0_y1, &boid0_vx1, &boid0_vy1);
 
-      for (int i = 0; i < active_balls; i++){
+      if (prev_act_balls != active_balls) {
+        spawnBoidrand(&boids[prev_act_balls].boid_x, &boids[prev_act_balls].boid_y, &boids[prev_act_balls].boid_vx, &boids[prev_act_balls].boid_vy);
+        prev_act_balls = active_balls;
+      }
+
+      for (int i = 0; i < prev_act_balls; i++){
         BouncePeg(&boids[i].boid_x, &boids[i].boid_y, &boids[i].boid_vx, &boids[i].boid_vy);
       }
       // update boid's position and velocity
       //wallsAndEdges(&boid0_x, &boid0_y, &boid0_vx, &boid0_vy) ;
       //wallsAndEdges(&boid0_x1, &boid0_y1, &boid0_vx1, &boid0_vy1) ;
 
-      for (int i = 0; i < active_balls; i++) {
-        wallsAndEdges(&boids[i].boid_x, &boids[i].boid_y, &boids[i].boid_vx, &boids[i].boid_vy, i) ;
+      for (int i = 0; i < prev_act_balls; i++) {
+        wallsAndEdges(&boids[i].boid_x, &boids[i].boid_y, &boids[i].boid_vx, &boids[i].boid_vy) ;
       }
       // draw the boid at its new position
       //fillCircle(fix2int15(boid0_x), fix2int15(boid0_y), fix2int15(BALL_RAD), color); 
       //fillCircle(fix2int15(boid0_x1), fix2int15(boid0_y1), fix2int15(BALL_RAD), color); 
 
-      for (int i = 0; i < active_balls; i++){
+      for (int i = 0; i < prev_act_balls; i++){
         fillCircle(fix2int15(boids[i].boid_x), fix2int15(boids[i].boid_y), fix2int15(BALL_RAD), color) ;
       }
-
-      sprintf(buffer0, "Counter of animated balls: %d", active_balls);
-      drawTextTiny8(0, 30, buffer0, GREEN, BLACK) ;
-
-      sprintf(buffer1, "Counter of fallen balls: %d", total_balls);
-      drawTextTiny8(0, 40, buffer1, GREEN, BLACK) ;
-
-      sprintf(video_buffer, "Time: %4.1f ms", (float)(PT_GET_TIME_usec()-draw_time)/1000);
-      drawTextTiny8(0, 50, video_buffer, GREEN, BLACK) ;
       
 
      // NEVER exit while
@@ -435,7 +429,9 @@ static PT_THREAD (protothread_anim1(struct pt *pt))
 {
     // Mark beginning of thread
     PT_BEGIN(pt);
+    static uint64_t draw_time ;
 
+    draw_time = PT_GET_TIME_usec();
     // Spawn a peg
     //spawnPeg(hor_center, ver_top, &boid1_x, &boid1_y);
 
@@ -481,6 +477,15 @@ static PT_THREAD (protothread_anim1(struct pt *pt))
         }
         y_pos += ver_sep;
       }
+
+      sprintf(buffer0, "Counter of animated balls: %d", active_balls);
+      drawTextTiny8(0, 30, buffer0, GREEN, BLACK) ;
+
+      sprintf(buffer1, "Counter of fallen balls: %d", total_balls);
+      drawTextTiny8(0, 40, buffer1, GREEN, BLACK) ;
+
+      sprintf(video_buffer, "Time: %4.1f ms", (float)(PT_GET_TIME_usec()-draw_time)/1000);
+      drawTextTiny8(0, 50, video_buffer, GREEN, BLACK) ;
 
 
       

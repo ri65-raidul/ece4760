@@ -32,18 +32,18 @@ char buffer[64];
 // GPIO ISR. Toggles LED
 void gpio_callback(uint gpio, uint32_t event_mask) {
     gpio_put(25, !gpio_get(25));
-    if (gpio_get(3)) {
+    if (!gpio_get(3)) {
         // Counter Clockwise
-        printf("Count is being decremented");
+        //printf("Count is being decremented");
         count--;
-        printf("Counter = %d", count);
+        //printf("Counter = %d", count);
         // sprintf(buffer, "Counter: %d", count);
         // drawTextVGA437(260, 450, buffer, WHITE, BLACK) ;
     } else {
         // clockwise
-        printf("Count is being incremented");
+        //printf("Count is being incremented");
         count++;
-        printf("Counter: %d", count);
+        //printf("Counter: %d", count);
         // sprintf(buffer, "Counter: %d", count);
         // drawTextVGA437(260, 450, buffer, WHITE, BLACK) ;
 
@@ -56,7 +56,7 @@ int main() {
     printf("GPIO interrupt\n");
 
 
-    //initVGA();
+    initVGA();
     // Configure GPIO input 2 for interrupt
     gpio_init(2) ;
     gpio_init(3) ;
@@ -66,13 +66,15 @@ int main() {
     gpio_set_dir(3, GPIO_IN) ;
     gpio_set_dir(25,GPIO_OUT);
 
-    gpio_pull_down(2) ;
-    gpio_pull_down(3) ;
+    gpio_pull_up(2) ;
+    gpio_pull_up(3) ;
 
-    gpio_set_irq_enabled_with_callback(2, GPIO_IRQ_EDGE_RISE, true, &gpio_callback);
+    gpio_set_irq_enabled_with_callback(2, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
     
     
    while(1){
+        sprintf(buffer, "Counter: %d", count);
+        drawTextVGA437(260, 450, buffer, WHITE, BLACK) ;
     }   
 
 }
