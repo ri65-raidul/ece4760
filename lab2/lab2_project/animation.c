@@ -119,11 +119,9 @@ typedef struct {
 // Array of the boid
 static Boid boids[200];
 
-// // Boid on core 0
-// fix15 boid0_x1 ;
-// fix15 boid0_y1 ;
-// fix15 boid0_vx1 ;
-// fix15 boid0_vy1 ;
+// array for the histogram bins
+volatile int bins[15]; // only 15 gaps between pegs for a row of 16 pegs
+
 
 // Boid on core 1
 fix15 boid1_x ;
@@ -174,29 +172,6 @@ void gpio_callback(uint gpio, uint32_t event_mask) {
     printf("Active Balls: %d\n", active_balls);
 }
 
-// Create a boid
-// void spawnBoid(fix15* x, fix15* y, fix15* vx, fix15* vy, int direction)
-// {
-//   // Start in center of screen
-//   *x = int2fix15(320) ;
-//   *y = int2fix15(0) ;
-  
-//   // Moving down
-//   *vx = float2fix15(-0.03);
-//   *vy = int2fix15(0) ;
-// }
-
-// // Create a boid
-// void spawnBoid1(fix15* x1, fix15* y1, fix15* vx1, fix15* vy1, int direction)
-// {
-//   // Start in center of screen
-//   *x1 = int2fix15(320) ;
-//   *y1 = int2fix15(0) ;
-  
-//   // Moving down
-//   *vx1 = float2fix15(0.03);
-//   *vy1 = int2fix15(0) ;
-// }
 
 // Create a boid
 void spawnBoidrand(fix15* x, fix15* y, fix15* vx, fix15* vy)
@@ -206,19 +181,6 @@ void spawnBoidrand(fix15* x, fix15* y, fix15* vx, fix15* vy)
   *x = int2fix15(320) ;
   *y = int2fix15(0) ;
 
-  //fix15 rand_fix = (((fix15)(rand() & 0xffff) >> 15) - 1 );
-  
-  // // Moving down
-  // //*vx = rand_fix;
-  // float dir;
-  // if (index%10 == 1) {
-  //   index = 3;
-  // }
-  // if (index%2==0){
-  //   dir = 0.01 * (index%10) + 0.01;
-  // } else {
-  //   dir = (-1) * (0.01 * (index%10) -0.01);
-  // }
 
   //*vx = float2fix15(dir);
   *vx = (rand() & 0xFFFF) - int2fix15(1);
@@ -372,17 +334,6 @@ static PT_THREAD (protothread_anim(struct pt *pt))
     // Mark beginning of thread
     PT_BEGIN(pt);
     
-
-    // Spawn a boid
-    //spawnBoid(&boid0_x, &boid0_y, &boid0_vx, &boid0_vy, 0);
-    //spawnBoid1(&boid0_x1, &boid0_y1, &boid0_vx1, &boid0_vy1, 0);
-
-    // Loop to spawn the boids
-    
-    // // spawn active balls
-    // for (int i = 0; i < active_balls; i++) {
-    //   spawnBoidrand(&boids[i].boid_x, &boids[i].boid_y, &boids[i].boid_vx, &boids[i].boid_vy);
-    // }
     while(1) {
       // Wait for the signal that the buffer's changed
       PT_YIELD_UNTIL(pt, draw_start_signal()) ;
@@ -391,9 +342,8 @@ static PT_THREAD (protothread_anim(struct pt *pt))
       // Signal core 1 that it can start drawing
       PT_SEM_SDK_SIGNAL(pt, &draw_semaphore) ;
 
-      //BouncePeg(&boid0_x, &boid0_y, &boid0_vx, &boid0_vy);
-      //BouncePeg(&boid0_x1, &boid0_y1, &boid0_vx1, &boid0_vy1);
 
+      // Spawn a boid if new ball is added
       if (prev_act_balls != active_balls) {
         spawnBoidrand(&boids[prev_act_balls].boid_x, &boids[prev_act_balls].boid_y, &boids[prev_act_balls].boid_vx, &boids[prev_act_balls].boid_vy);
         prev_act_balls = active_balls;
@@ -402,19 +352,26 @@ static PT_THREAD (protothread_anim(struct pt *pt))
       for (int i = 0; i < prev_act_balls; i++){
         BouncePeg(&boids[i].boid_x, &boids[i].boid_y, &boids[i].boid_vx, &boids[i].boid_vy);
       }
-      // update boid's position and velocity
-      //wallsAndEdges(&boid0_x, &boid0_y, &boid0_vx, &boid0_vy) ;
-      //wallsAndEdges(&boid0_x1, &boid0_y1, &boid0_vx1, &boid0_vy1) ;
 
       for (int i = 0; i < prev_act_balls; i++) {
         wallsAndEdges(&boids[i].boid_x, &boids[i].boid_y, &boids[i].boid_vx, &boids[i].boid_vy) ;
       }
-      // draw the boid at its new position
-      //fillCircle(fix2int15(boid0_x), fix2int15(boid0_y), fix2int15(BALL_RAD), color); 
-      //fillCircle(fix2int15(boid0_x1), fix2int15(boid0_y1), fix2int15(BALL_RAD), color); 
 
       for (int i = 0; i < prev_act_balls; i++){
         fillCircle(fix2int15(boids[i].boid_x), fix2int15(boids[i].boid_y), fix2int15(BALL_RAD), color) ;
+      }
+
+            // draw histogram bins
+      for (int b = 0; b < 15; b++) {
+        // void fillRect(short x, short y, short w, short h, char color) ;
+        // x (left edge) = hor_center - half_hor_sep*15 (leftmost bin) + b*hor_sep (shift right by number of bins)
+        // y (top edge) = total screen height (480) - h
+        // w = hor_sep
+        // h = (bins[b]/total_balls) * normalized max height (ie 100 or smth) --> how to do this without using division?
+        
+        // int height = (bins[b] / total_balls) * 100; // normalized height; maybe int division is ok
+        int height = bins[b]; // not normalized!!
+        fillRect((hor_center - half_hor_sep*15) + (b*hor_sep), 480 - height, hor_sep, height, GREEN);
       }
       
 
@@ -456,9 +413,6 @@ static PT_THREAD (protothread_anim1(struct pt *pt))
     while(1) {
       // Wait for the signal from core 0
       PT_SEM_SDK_WAIT(pt, &draw_semaphore) ;
-
-
-      //fillCircle(fix2int15(x_pos), fix2int15(y_pos), fix2int15(PEG_RAD), color); 
       
       // Spawn pegs for 16 rows
       
@@ -470,8 +424,6 @@ static PT_THREAD (protothread_anim1(struct pt *pt))
 
         // Loop to spawn pegs in each row
         for (int j = 0; j <= i; j++) {
-          //spawnPeg(x_pos, y_pos, &boid1_x, &boid1_y);
-          //printf("xpos: %d", fix2int15(x_pos), " y-pos: %d\n", fix2int15(y_pos));
           fillCircle(fix2int15(x_pos), fix2int15(y_pos), fix2int15(PEG_RAD), color); 
           x_pos += hor_sep;
         }
@@ -535,15 +487,6 @@ int main(){
   // Initialize the semaphore
   // Arguments: pointer to sem, initial count, max count
   sem_init(&draw_semaphore, 0, 1) ;
-
-  // initialize all boid values
-  // for (int i = 0; i < 10; i++) { // hard coded array length
-  //   boids[i].boid_x = 320;
-  //   boids[i].boid_y = 0;
-  //   boids[i].boid_vx = 0.001; // randomization - change later
-  //   boids[i].boid_vy = 0;
-  // }
-
 
   //==================================== DAC SECTION =========================================
   // Initialize SPI channel (channel, baud rate set to 20MHz)
