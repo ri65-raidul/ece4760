@@ -99,8 +99,11 @@ unsigned short * address_pointer = &DAC_data[0] ;
 const uint32_t transfer_count = sine_table_size ;
 
 
-// the color of the boid
+// the color of the pegs
 char color = WHITE ;
+const char ball_color = GREEN ;
+const char TEXT_COLOR = GREEN ;
+const char HIST_COLOR = GREEN ;
 
 // Boid on core 0
 fix15 boid0_x ;
@@ -134,7 +137,7 @@ fix15 boid1_vy ;
 const fix15 BALL_RAD = int2fix15(4);
 const fix15 PEG_RAD = int2fix15(6);
 
-const fix15 BOUNCINESS = float2fix15(0.5);
+
 const fix15 GRAVITY = float2fix15(0.37);
 
 const fix15 ver_sep = int2fix15(19);
@@ -144,35 +147,72 @@ volatile fix15 half_hor_sep =  int2fix15(19);
 const fix15 hor_center = int2fix15(320);
 const fix15 ver_top    = int2fix15(50);
 
+
 // Global counters
-volatile long int active_balls = 0;
+volatile long int active_balls = 200;
 volatile long int prev_act_balls = 0;
 volatile long int total_balls = 0;
+volatile fix15 BOUNCINESS = float2fix15(0.5);
+
+typedef struct {
+  int row;
+  int col;
+} Peg;
+
+Peg last_peg;
+Peg curr_peg;
 
 char buffer0[64];
 char buffer1[64];
-char video_buffer[64];
+char buffer2[64];
 
+char video_buffer[64];
+char bins_buff[15][64];
+// Flags
+volatile int bounce_mode = 0;
+volatile int reset       = 0;
 
 // Create a semaphore
 semaphore_t draw_semaphore ;
 
 
-// GPIO ISR. Toggles LED
+// GPIO 2 ISR. Increases balls
 void gpio_callback(uint gpio, uint32_t event_mask) {
+
+    reset = 1;
+  
     if (!gpio_get(3)) {
         // Counter Clockwise
-        if (active_balls > 0){
-          active_balls--;
+        if(bounce_mode){
+          if (BOUNCINESS > 0.0){
+            BOUNCINESS += float2fix15(0.01);
+          }
+        }
+        else {
+          if (active_balls > 0){
+            active_balls--;
+          }
         }
 
     } else {
-        // clockwise
-        active_balls++;
+        //clockwise
+        if(bounce_mode){
+          BOUNCINESS -= float2fix15(0.01);
+        }
+        else {
+        
+          active_balls++;
+        }
 
     }
-    printf("Active Balls: %d\n", active_balls);
+  }
+
+// GPIO 4 SWITCH
+void gpio_switch(uint gpio, uint32_t event_mask) {
+  reset = 1;
+  bounce_mode = !bounce_mode;
 }
+
 
 
 // Create a boid
@@ -185,7 +225,13 @@ void spawnBoidrand(fix15* x, fix15* y, fix15* vx, fix15* vy)
 
 
   //*vx = float2fix15(dir);
-  *vx = (rand() & 0xFFFF) - int2fix15(1);
+  fix15 rand_vx = (rand() & 0x7FFF) - float2fix15(0.5);
+  // if (rand_vx == 0) {
+  //   *vx = rand_vx + 0.01;
+  // } else {
+  //   *vx = rand_vx; // come back to this
+  // }
+  *vx = rand_vx;
   *vy = int2fix15(0) ;
 
 }
@@ -260,6 +306,9 @@ void BouncePeg(fix15* x, fix15* y, fix15* vx, fix15* vy)
           fix15 dx = *x - x_pos;
           fix15 dy = *y - y_pos;
 
+          curr_peg.row = i;
+          curr_peg.col = j;
+
 
           if(absfix15(dx) < (sum_radius) && absfix15(dy) < (sum_radius) ) {
 
@@ -290,7 +339,11 @@ void BouncePeg(fix15* x, fix15* y, fix15* vx, fix15* vy)
               
               
               // Make a sound
+              if (curr_peg.row != last_peg.row && curr_peg.col != last_peg.col){
                 dma_start_channel_mask(1u << ctrl_chan) ;
+                last_peg.row = curr_peg.row;
+                last_peg.col = curr_peg.col;
+              }
 
               // Remove some energy from the ball
               *vx = multfix15(BOUNCINESS, *vx);
@@ -374,15 +427,7 @@ static PT_THREAD (protothread_anim(struct pt *pt))
       }
 
       for (int i = 0; i < prev_act_balls; i++){
-           fillCircle(fix2int15(boids[i].boid_x), fix2int15(boids[i].boid_y), fix2int15(BALL_RAD), GREEN) ;
-      }
-
-      
-      for(int i = 0; i < 15; i++){
-        
-        fillRect(35 + (i * 38), 460, 36, (bins[i]*100)/bins_max, GREEN);
-        //printf("bins[%d] height: %d\n", i, (bins[i]*100)/bins_max);
-
+           fillCircle(fix2int15(boids[i].boid_x), fix2int15(boids[i].boid_y), fix2int15(BALL_RAD), ball_color) ;
       }
       
       
@@ -427,6 +472,14 @@ static PT_THREAD (protothread_anim1(struct pt *pt))
       PT_SEM_SDK_WAIT(pt, &draw_semaphore) ;
       
       // Spawn pegs for 16 rows
+      if (reset) {
+        for (int i = 0; i < 15; i++) {
+          bins[i] = 0;
+        }
+        total_balls = 0;
+        // Put flag back to 0
+        reset = 0;
+      }
       
       y_pos = ver_top;
 
@@ -443,14 +496,31 @@ static PT_THREAD (protothread_anim1(struct pt *pt))
       }
 
       sprintf(buffer0, "Counter of animated balls: %d", active_balls);
-      drawTextTiny8(0, 30, buffer0, GREEN, BLACK) ;
+      drawTextTiny8(0, 30, buffer0, TEXT_COLOR, BLACK) ;
 
       sprintf(buffer1, "Counter of fallen balls: %d", total_balls);
-      drawTextTiny8(0, 40, buffer1, GREEN, BLACK) ;
+      drawTextTiny8(0, 40, buffer1, TEXT_COLOR, BLACK) ;
 
       sprintf(video_buffer, "Time: %4.1f ms", (float)(PT_GET_TIME_usec()-draw_time)/1000);
-      drawTextTiny8(0, 50, video_buffer, GREEN, BLACK) ;
+      drawTextTiny8(0, 50, video_buffer, TEXT_COLOR, BLACK) ;
 
+      //sprintf(buffer2, "Bounciness: %f\n", fix2float15(BOUNCINESS));
+      //drawTextTiny8(0, 60, buffer2, GREEN, BLACK) ;
+
+      sprintf(buffer2, "BOUNCINESS: %1.3f", fix2float15(BOUNCINESS));
+      drawTextTiny8(0, 60, buffer2, TEXT_COLOR, BLACK) ;
+
+
+      for(int i = 0; i < 15; i++){
+        sprintf(bins_buff[i], "%d", bins[i]);
+        //drawTextTiny8(54 +  (i * 38), 360, bins_buff[i], GREEN, BLACK);
+        //fillRect(35 + (i * 38), 480, 36, (bins[i]*100)/bins_max, GREEN);
+        drawTextTiny8(fix2int15(hor_center) - (14 * fix2int15(half_hor_sep)) + (i * fix2int15(hor_sep)), 360, bins_buff[i], TEXT_COLOR, BLACK);
+        // 35 = hor_center - (15 * half_hor_sep)
+        fillRect((fix2int15(hor_center) - (15 * fix2int15(half_hor_sep)) + (i * fix2int15(hor_sep))), 480, fix2int15(hor_sep) - 2, (bins[i]*100)/bins_max, HIST_COLOR);
+        //printf("bins[%d] height: %d\n", i, (bins[i]*100)/bins_max);
+
+      }
 
       
       //fillCircle(fix2int15(boid1_x), fix2int15(boid1_y), fix2int15(PEG_RAD), color); 
@@ -463,6 +533,15 @@ static PT_THREAD (protothread_anim1(struct pt *pt))
 // === core 1 main -- started in main below
 // ========================================
 void core1_main(){
+  set_sys_clock_khz(150000, true) ;
+  // initialize stio
+  stdio_init_all() ;
+  
+  gpio_init(4) ;
+  gpio_set_dir(4, GPIO_IN);
+  gpio_pull_up(4);
+
+  gpio_set_irq_enabled_with_callback(4, GPIO_IRQ_EDGE_FALL, true, &gpio_switch);
   // Add animation thread
   pt_add_thread(protothread_anim1);
   // Start the scheduler
@@ -486,15 +565,20 @@ int main(){
   gpio_init(2) ;
   gpio_init(3) ;
   gpio_init(25) ;
+  //gpio_init(4) ;
 
   gpio_set_dir(2, GPIO_IN) ;
   gpio_set_dir(3, GPIO_IN) ;
   gpio_set_dir(25,GPIO_OUT);
+  //gpio_set_dir(4, GPIO_IN);
 
-  gpio_pull_up(2) ;
-  gpio_pull_up(3) ;
+
+  //gpio_pull_up(2) ;
+  //gpio_pull_up(3) ;
+  //gpio_pull_up(4);
 
   gpio_set_irq_enabled_with_callback(2, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
+  //gpio_set_irq_enabled_with_callback(4, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
 
   // Initialize the semaphore
   // Arguments: pointer to sem, initial count, max count
@@ -567,7 +651,8 @@ int main(){
   for (int i = 0; i < 500; i++) { // hard coded array length
     boids[i].boid_x = int2fix15(320);
     boids[i].boid_y = int2fix15(0);
-    boids[i].boid_vx = int2fix15(0); // randomization - change later
+    // 0000_0000_0111_1111
+    boids[i].boid_vx = rand() & 0x7FFF - float2fix15(0.5); // randomization - change later
     boids[i].boid_vy = int2fix15(0);
   }
   // start core 1 
