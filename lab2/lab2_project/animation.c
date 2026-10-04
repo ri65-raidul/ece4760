@@ -39,6 +39,7 @@
 #include "hardware/clocks.h"
 #include "hardware/pll.h"
 #include "hardware/gpio.h"
+#include "hardware/vreg.h"
 // Include protothreads
 #include "pt_cornell_rp2040_v1_4.h"
 
@@ -66,7 +67,7 @@ typedef signed int fix15 ;
 #define hitRight(a) (a>int2fix15(640))
 
 // uS per frame
-#define FRAME_RATE 33000
+#define FRAME_RATE 16500
 
 
 //DMA
@@ -120,7 +121,7 @@ typedef struct {
 } Boid;
 
 // Array of the boid
-static Boid boids[500];
+static Boid boids[1000];
 
 // array for the histogram bins
 volatile int bins[15]; // only 15 gaps between pegs for a row of 16 pegs
@@ -171,6 +172,7 @@ char bins_buff[15][64];
 // Flags
 volatile int bounce_mode = 0;
 volatile int reset       = 0;
+volatile int clockwise   = 0;
 
 // Create a semaphore
 semaphore_t draw_semaphore ;
@@ -181,29 +183,36 @@ void gpio_callback(uint gpio, uint32_t event_mask) {
 
     reset = 1;
   
+    // if (!gpio_get(3)) {
+    //     // Counter Clockwise
+    //     if(bounce_mode){
+    //       if (BOUNCINESS > 0.0){
+    //         BOUNCINESS += float2fix15(0.01);
+    //       }
+    //     }
+    //     else {
+    //       if (active_balls > 0){
+    //         active_balls-=10;
+    //       }
+    //     }
+
+    // } else {
+    //     //clockwise
+    //     if(bounce_mode){
+    //       BOUNCINESS -= float2fix15(0.01);
+    //     }
+    //     else {
+        
+    //       active_balls+=10;
+    //     }
+
+    // }
+
     if (!gpio_get(3)) {
         // Counter Clockwise
-        if(bounce_mode){
-          if (BOUNCINESS > 0.0){
-            BOUNCINESS += float2fix15(0.01);
-          }
-        }
-        else {
-          if (active_balls > 0){
-            active_balls--;
-          }
-        }
-
+        clockwise = 1;
     } else {
-        //clockwise
-        if(bounce_mode){
-          BOUNCINESS -= float2fix15(0.01);
-        }
-        else {
-        
-          active_balls++;
-        }
-
+        clockwise = 2;
     }
   }
 
@@ -410,6 +419,15 @@ static PT_THREAD (protothread_anim(struct pt *pt))
       // Signal core 1 that it can start drawing
       PT_SEM_SDK_SIGNAL(pt, &draw_semaphore) ;
 
+      if (clockwise == 1) {
+        active_balls-=10;
+        clockwise = 0;
+      }
+      else if (clockwise == 2) {
+        active_balls+=10;
+        clockwise = 0;
+      }
+
 
       // Spawn a boid if new ball is added
       if (prev_act_balls != active_balls) {
@@ -495,7 +513,7 @@ static PT_THREAD (protothread_anim1(struct pt *pt))
         y_pos += ver_sep;
       }
 
-      sprintf(buffer0, "Counter of animated balls: %d", active_balls);
+      sprintf(buffer0, "Counter of animated balls: %05d", active_balls);
       drawTextTiny8(0, 30, buffer0, TEXT_COLOR, BLACK) ;
 
       sprintf(buffer1, "Counter of fallen balls: %d", total_balls);
@@ -533,9 +551,9 @@ static PT_THREAD (protothread_anim1(struct pt *pt))
 // === core 1 main -- started in main below
 // ========================================
 void core1_main(){
-  set_sys_clock_khz(150000, true) ;
+  //set_sys_clock_khz(300000, true) ;
   // initialize stio
-  stdio_init_all() ;
+  //stdio_init_all() ;
   
   gpio_init(4) ;
   gpio_set_dir(4, GPIO_IN);
@@ -554,7 +572,10 @@ void core1_main(){
 // ========================================
 // USE ONLY C-sdk library
 int main(){
-  set_sys_clock_khz(150000, true) ;
+  // Increase the voltage
+  vreg_set_voltage(VREG_VOLTAGE_1_30);
+
+  set_sys_clock_khz(375000, true) ;
   // initialize stio
   stdio_init_all() ;
 

@@ -73,7 +73,7 @@ int main() {
     
     
    while(1){
-        sprintf(buffer, "Counter: %d", count);
+        sprintf(buffer, "Counter: %05d", count);
         drawTextVGA437(260, 450, buffer, WHITE, BLACK) ;
     }   
 
