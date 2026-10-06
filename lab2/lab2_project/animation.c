@@ -153,7 +153,7 @@ const fix15 ALPHA = 1;
 const fix15 BETA = 1;
 
 // Global counters
-volatile long int active_balls =1250;
+volatile long int active_balls = 250;
 volatile long int prev_act_balls = 0;
 volatile long int total_balls = 0;
 volatile fix15 BOUNCINESS = float2fix15(0.5);
@@ -179,6 +179,7 @@ char buffer2[64];
 
 char video_buffer[64];
 char bins_buff[15][64];
+
 // Flags
 volatile int bounce_mode = 0;
 volatile int reset       = 0;
@@ -190,47 +191,46 @@ semaphore_t draw_semaphore ;
 
 // GPIO 2 ISR. Increases balls
 void gpio_callback(uint gpio, uint32_t event_mask) {
-
+    printf("enters callback\n");
     reset = 1;
-  
-    if (!gpio_get(3)) {
-        // Counter Clockwise
-        // if(bounce_mode){
-        //   if (BOUNCINESS > 0.0){
-        //     BOUNCINESS += 327;
-        //   }
-        // }
-        // else {
-          if (active_balls > 0){
-            active_balls-=100;
-          }
-       // }
 
-    } else {
-        //clockwise
-        // if(bounce_mode){
-        //   BOUNCINESS -= 327;
-        // }
-        // else {
-        
-          active_balls+=100;
-        //}
-
+    if(gpio == 4) {
+      printf("enters bounce\n");
+      bounce_mode = !bounce_mode;
     }
+    
+    if(gpio == 2){
+      if (gpio_get(3)) {
+        //Counter Clockwise
+        if(bounce_mode){
+          if (BOUNCINESS > 0.0){
+            BOUNCINESS -= 327; //fix15 of 0.5
+          }
+        } else {
+          if (active_balls > 0){
+            active_balls -= 10;
+          }
+        }
 
-    // if (!gpio_get(3)) {
-    //     // Counter Clockwise
-    //     clockwise = 1;
-    // } else {
-    //     clockwise = 2;
-    // }
+      } else {
+          //Clockwise
+          if(bounce_mode){
+            BOUNCINESS += 327; //fix15 of 0.5
+          }
+          else {
+            active_balls += 10;
+          }
+
+      }
+    }
+    
   }
 
 // GPIO 4 SWITCH
-void gpio_switch(uint gpio, uint32_t event_mask) {
-  reset = 1;
-  bounce_mode = !bounce_mode;
-}
+// void gpio_switch(uint gpio, uint32_t event_mask) {
+//   reset = 1;
+//   bounce_mode = !bounce_mode;
+// }
 
 
 
@@ -243,9 +243,9 @@ void spawnBoidrand(fix15* x, fix15* y, fix15* vx, fix15* vy)
   *y = int2fix15(0) ;
 
 
-  //*vx = float2fix15(dir);
+  
   fix15 rand_vx = (rand() & 0x7FFF) - 16384 ;
-  // rand_vx = rand_vx - 32768;
+
   // if (rand_vx == 0) {
   //   *vx = rand_vx + 0.01;
   // } else {
@@ -378,17 +378,12 @@ void BouncePeg(fix15* x, fix15* y, fix15* vx, fix15* vy)
               min = abs_dx;
             }
             fix15 dist = (max) + (min>>2);
-            //printf("%d, ", fix2int15(dist));
 
-            //fix15 dist = float2fix15(sqrtf( fix2float15(multfix15(dx, dx)) + fix2float15(multfix15(dy, dy)) ));
+            
 
-            // printf("dx squared: %d\n", fix2int15(multfix15(dx,dx)));
-            // printf("dy squared: %d\n", fix2int15(multfix15(dy,dy)));
-            //printf("Dist: %d\n", (int)(dist >> 15));
 
             if(dist < (sum_radius)){
-              //printf("%d, %d\n", fix2int15(dist), fix2int15(sum_radius));
-              //printf("Enters if");
+              
               //Generate normal vector
               //fix15 normal_x = divfix(dx, dist);
               //fix15 normal_y = divfix(dy, dist);
@@ -492,15 +487,6 @@ static PT_THREAD (protothread_anim(struct pt *pt))
       // Signal core 1 that it can start drawing
       PT_SEM_SDK_SIGNAL(pt, &draw_semaphore) ;
 
-      // if (clockwise == 1) {
-      //   active_balls-=10;
-      //   clockwise = 0;
-      // }
-      // else if (clockwise == 2) {
-      //   active_balls+=10;
-      //   clockwise = 0;
-      // }
-
 
       // Spawn a boid if new ball is added
       if (prev_act_balls != active_balls) {
@@ -538,7 +524,7 @@ static PT_THREAD (protothread_anim1(struct pt *pt))
 
     draw_time = PT_GET_TIME_usec();
     // Spawn a peg
-    //spawnPeg(hor_center, ver_top, &boid1_x, &boid1_y);
+    
 
     fix15 y_pos = ver_top;
 
@@ -595,8 +581,7 @@ static PT_THREAD (protothread_anim1(struct pt *pt))
       sprintf(video_buffer, "Time: %4.1f ms", (float)(PT_GET_TIME_usec()-draw_time)/1000);
       drawTextTiny8(0, 50, video_buffer, TEXT_COLOR, BLACK) ;
 
-      //sprintf(buffer2, "Bounciness: %f\n", fix2float15(BOUNCINESS));
-      //drawTextTiny8(0, 60, buffer2, GREEN, BLACK) ;
+      
 
       sprintf(buffer2, "BOUNCINESS: %1.3f", fix2float15(BOUNCINESS));
       drawTextTiny8(0, 60, buffer2, TEXT_COLOR, BLACK) ;
@@ -612,9 +597,17 @@ static PT_THREAD (protothread_anim1(struct pt *pt))
         //printf("bins[%d] height: %d\n", i, (bins[i]*100)/bins_max);
 
       }
-
-      //printf("%d", active_balls);
+      
+      //PRINT STATEMENTS
+        if(gpio_get(2))
+          printf("gpio 2 called");
+        if(gpio_get(3))
+          printf("gpio 3 called");
+      
+      
+          //printf("%d", active_balls);
       //fillCircle(fix2int15(boid1_x), fix2int15(boid1_y), fix2int15(PEG_RAD), color); 
+
      // NEVER exit while
     } // END WHILE(1)
   PT_END(pt);
@@ -628,11 +621,11 @@ void core1_main(){
   // initialize stio
   //stdio_init_all() ;
   
-  gpio_init(4) ;
-  gpio_set_dir(4, GPIO_IN);
-  gpio_pull_up(4);
+  // gpio_init(4) ;
+  // gpio_set_dir(4, GPIO_IN);
+  // gpio_pull_up(4);
 
-  gpio_set_irq_enabled_with_callback(4, GPIO_IRQ_EDGE_FALL, true, &gpio_switch);
+  // gpio_set_irq_enabled_with_callback(4, GPIO_IRQ_EDGE_FALL, true, &gpio_switch);
   // Add animation thread
   pt_add_thread(protothread_anim1);
   // Start the scheduler
@@ -658,21 +651,18 @@ int main(){
   // Configure GPIO input 2 for interrupt
   gpio_init(2) ;
   gpio_init(3) ;
-  gpio_init(25) ;
-  //gpio_init(4) ;
+  
 
   gpio_set_dir(2, GPIO_IN) ;
   gpio_set_dir(3, GPIO_IN) ;
-  gpio_set_dir(25,GPIO_OUT);
-  //gpio_set_dir(4, GPIO_IN);
 
-
-  //gpio_pull_up(2) ;
-  //gpio_pull_up(3) ;
-  //gpio_pull_up(4);
-
-  gpio_set_irq_enabled_with_callback(2, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
-  //gpio_set_irq_enabled_with_callback(4, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
+  gpio_init(4) ;
+  gpio_set_dir(4, GPIO_IN);
+  gpio_pull_up(4);
+  
+  
+  gpio_set_irq_enabled_with_callback(2, GPIO_IRQ_EDGE_RISE, true, &gpio_callback);
+  gpio_set_irq_enabled_with_callback(4, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
 
   // Initialize the semaphore
   // Arguments: pointer to sem, initial count, max count
