@@ -121,7 +121,7 @@ typedef struct {
 } Boid;
 
 // Array of the boid
-static Boid boids[1000];
+static Boid boids[5000];
 
 // array for the histogram bins
 volatile int bins[15]; // only 15 gaps between pegs for a row of 16 pegs
@@ -135,8 +135,9 @@ fix15 boid1_vx ;
 fix15 boid1_vy ;
 
 
-const fix15 BALL_RAD = int2fix15(4);
-const fix15 PEG_RAD = int2fix15(6);
+const fix15 BALL_RAD = int2fix15(3);
+const fix15 PEG_RAD = int2fix15(5);
+const fix15 TOTAL_RAD = int2fix15(8);
 
 
 const fix15 GRAVITY = float2fix15(0.37);
@@ -148,9 +149,11 @@ volatile fix15 half_hor_sep =  int2fix15(19);
 const fix15 hor_center = int2fix15(320);
 const fix15 ver_top    = int2fix15(50);
 
+const fix15 ALPHA = 1;
+const fix15 BETA = 1;
 
 // Global counters
-volatile long int active_balls = 200;
+volatile long int active_balls =1250;
 volatile long int prev_act_balls = 0;
 volatile long int total_balls = 0;
 volatile fix15 BOUNCINESS = float2fix15(0.5);
@@ -162,6 +165,13 @@ typedef struct {
 
 Peg last_peg;
 Peg curr_peg;
+
+typedef struct {
+  fix15 x;
+  fix15 y;
+} Peg_xy;
+
+Peg_xy peg_pos[136];
 
 char buffer0[64];
 char buffer1[64];
@@ -183,37 +193,37 @@ void gpio_callback(uint gpio, uint32_t event_mask) {
 
     reset = 1;
   
-    // if (!gpio_get(3)) {
-    //     // Counter Clockwise
-    //     if(bounce_mode){
-    //       if (BOUNCINESS > 0.0){
-    //         BOUNCINESS += float2fix15(0.01);
-    //       }
-    //     }
-    //     else {
-    //       if (active_balls > 0){
-    //         active_balls-=10;
-    //       }
-    //     }
-
-    // } else {
-    //     //clockwise
-    //     if(bounce_mode){
-    //       BOUNCINESS -= float2fix15(0.01);
-    //     }
-    //     else {
-        
-    //       active_balls+=10;
-    //     }
-
-    // }
-
     if (!gpio_get(3)) {
         // Counter Clockwise
-        clockwise = 1;
+        // if(bounce_mode){
+        //   if (BOUNCINESS > 0.0){
+        //     BOUNCINESS += 327;
+        //   }
+        // }
+        // else {
+          if (active_balls > 0){
+            active_balls-=100;
+          }
+       // }
+
     } else {
-        clockwise = 2;
+        //clockwise
+        // if(bounce_mode){
+        //   BOUNCINESS -= 327;
+        // }
+        // else {
+        
+          active_balls+=100;
+        //}
+
     }
+
+    // if (!gpio_get(3)) {
+    //     // Counter Clockwise
+    //     clockwise = 1;
+    // } else {
+    //     clockwise = 2;
+    // }
   }
 
 // GPIO 4 SWITCH
@@ -234,7 +244,8 @@ void spawnBoidrand(fix15* x, fix15* y, fix15* vx, fix15* vy)
 
 
   //*vx = float2fix15(dir);
-  fix15 rand_vx = (rand() & 0x7FFF) - float2fix15(0.5);
+  fix15 rand_vx = (rand() & 0x7FFF) - 16384 ;
+  // rand_vx = rand_vx - 32768;
   // if (rand_vx == 0) {
   //   *vx = rand_vx + 0.01;
   // } else {
@@ -267,11 +278,11 @@ void wallsAndEdges(fix15* x, fix15* y, fix15* vx, fix15* vy)
     for (int b = 0; b < 15; b++) {
       if ((fix2int15(*x) > 35 + b * 38) && (fix2int15(*x) < 35 + (b + 1)*38)) {
         bins[b] += 1;
-        printf("Bins[b]: %d\n", bins[b]);
+        //printf("Bins[b]: %d\n", bins[b]);
         // Updating bins max
         if (bins[b] > bins_max) {
           bins_max = bins[b];
-          printf("Bins Max: %d\n", bins_max);
+          //printf("Bins Max: %d\n", bins_max);
         }
       }
     }
@@ -298,40 +309,101 @@ void wallsAndEdges(fix15* x, fix15* y, fix15* vx, fix15* vy)
 // Detect wallstrikes, update velocity and position
 void BouncePeg(fix15* x, fix15* y, fix15* vx, fix15* vy)
 {
-  fix15 sum_radius = BALL_RAD + PEG_RAD;
+  fix15 sum_radius = TOTAL_RAD;
 
   // Update position using velocity
   *x = *x + *vx ;
   *y = *y + *vy ;
 
-      fix15 y_pos = ver_top;
+      //fix15 y_pos = ver_top;
+      fix15 y_pos;
+      fix15 x_pos;
 
+      // // Row calculation
+      // int i_start = 0;
+      // int i_limit = 0;
+      // // Variable to store y as int
+      // int y_fix = fix2int15(*y);
+      // if (y_fix < 50){
+      //   i_start = 0;
+      //   i_limit = 1;
+      // } else if (y_fix >= 50 && y_fix <= 335){
+      //   i_start = (y_fix-50)/19 + 1;
+      //   i_limit = i_start + 1;
+      // }
+
+      int k = 0;
+
+      // row
       for (int i = 0; i < 16; i++) {
 
-        fix15 x_pos = hor_center - multfix15(half_hor_sep, int2fix15(i));
+        //fix15 x_pos = hor_center - multfix15(half_hor_sep, int2fix15(i));
+        y_pos = peg_pos[k].y;
+
+        // Column calculation
+        // int j_start = 0;
+        // int j_limit = 0;
+        // // Variable to store x as int
+        // int x_fix = fix2int15(*x);
+        // j_start = (x_fix - (320 - 19*i_start))/38;
+        // if (j_start > 0){
+        //   j_start -= 1;
+        // }
+        // j_limit = j_start + 1;
+        // printf("x_pos: %d, y_pos: %d\n", x_fix, y_fix);
+        // printf("i_start: %d, i_limit: %d\n", i_start, i_limit);
+        // printf("j_start: %d, j_limit: %d\n\n\n\n", j_start, j_limit);
 
         // Loop through each pegs in each row
+        // column
         for (int j = 0; j <= i; j++) {
+          x_pos = peg_pos[k].x;
           fix15 dx = *x - x_pos;
           fix15 dy = *y - y_pos;
 
           curr_peg.row = i;
           curr_peg.col = j;
 
+          fix15 abs_dx = absfix15(dx);
+          fix15 abs_dy = absfix15(dy);
 
-          if(absfix15(dx) < (sum_radius) && absfix15(dy) < (sum_radius) ) {
+          if(abs_dx < (TOTAL_RAD) && abs_dy < (TOTAL_RAD) ) {
+            fix15 max = 0;
+            fix15 min = 0;
+            if (abs_dx > abs_dy){
+              max = abs_dx;
+              min = abs_dy;
+            } else {
+              max = abs_dy;
+              min = abs_dx;
+            }
+            fix15 dist = (max) + (min>>2);
+            //printf("%d, ", fix2int15(dist));
 
-            fix15 dist = float2fix15(sqrtf( fix2float15(multfix15(dx, dx)) + fix2float15(multfix15(dy, dy)) ));
+            //fix15 dist = float2fix15(sqrtf( fix2float15(multfix15(dx, dx)) + fix2float15(multfix15(dy, dy)) ));
 
             // printf("dx squared: %d\n", fix2int15(multfix15(dx,dx)));
             // printf("dy squared: %d\n", fix2int15(multfix15(dy,dy)));
             //printf("Dist: %d\n", (int)(dist >> 15));
 
             if(dist < (sum_radius)){
+              //printf("%d, %d\n", fix2int15(dist), fix2int15(sum_radius));
               //printf("Enters if");
               //Generate normal vector
-              fix15 normal_x = divfix(dx, dist);
-              fix15 normal_y = divfix(dy, dist);
+              //fix15 normal_x = divfix(dx, dist);
+              //fix15 normal_y = divfix(dy, dist);
+              fix15 normal_x;
+              fix15 normal_y;
+              if (dist > int2fix15(4)){
+                normal_x = dx>>3;
+                normal_y = dy>>3;
+              } else if(dist >= int2fix15(2)) {
+                normal_x = dx>>2;
+                normal_y = dy>>2;
+              } else {
+                normal_x = dx>>1;
+                normal_y = dy>>1;
+              }
 
               // Collision physics
               fix15 intermediate_term = multfix15(int2fix15(-2), (multfix15(normal_x, *vx) + multfix15(normal_y, *vy)));
@@ -361,9 +433,10 @@ void BouncePeg(fix15* x, fix15* y, fix15* vx, fix15* vy)
             }
 
           }
-          x_pos += hor_sep;
+          //x_pos += hor_sep;
+          k++;
         }
-        y_pos += ver_sep;
+        //y_pos += ver_sep;
       }
   
   
@@ -419,14 +492,14 @@ static PT_THREAD (protothread_anim(struct pt *pt))
       // Signal core 1 that it can start drawing
       PT_SEM_SDK_SIGNAL(pt, &draw_semaphore) ;
 
-      if (clockwise == 1) {
-        active_balls-=10;
-        clockwise = 0;
-      }
-      else if (clockwise == 2) {
-        active_balls+=10;
-        clockwise = 0;
-      }
+      // if (clockwise == 1) {
+      //   active_balls-=10;
+      //   clockwise = 0;
+      // }
+      // else if (clockwise == 2) {
+      //   active_balls+=10;
+      //   clockwise = 0;
+      // }
 
 
       // Spawn a boid if new ball is added
@@ -540,7 +613,7 @@ static PT_THREAD (protothread_anim1(struct pt *pt))
 
       }
 
-      
+      //printf("%d", active_balls);
       //fillCircle(fix2int15(boid1_x), fix2int15(boid1_y), fix2int15(PEG_RAD), color); 
      // NEVER exit while
     } // END WHILE(1)
@@ -551,7 +624,7 @@ static PT_THREAD (protothread_anim1(struct pt *pt))
 // === core 1 main -- started in main below
 // ========================================
 void core1_main(){
-  //set_sys_clock_khz(300000, true) ;
+  //set_sys_clock_khz(375000, true) ;
   // initialize stio
   //stdio_init_all() ;
   
@@ -666,16 +739,34 @@ int main(){
         false                       // Don't start immediately.
     );
   //==================================== DAC SECTION =========================================
-
+  
 
   //initialize all boid values
-  for (int i = 0; i < 500; i++) { // hard coded array length
+  for (int i = 0; i < 5000; i++) { // hard coded array length
     boids[i].boid_x = int2fix15(320);
     boids[i].boid_y = int2fix15(0);
     // 0000_0000_0111_1111
     boids[i].boid_vx = rand() & 0x7FFF - float2fix15(0.5); // randomization - change later
     boids[i].boid_vy = int2fix15(0);
   }
+
+  // Hardcoding all the positions of the pegs
+  int k = 0;
+  fix15 y_pos = ver_top;
+  for (int i = 0; i < 16; i++) {
+
+    fix15 x_pos = hor_center - multfix15(half_hor_sep, int2fix15(i));
+
+    // Loop to spawn pegs in each row
+    for (int j = 0; j <= i; j++) {
+      peg_pos[k].x = x_pos;
+      peg_pos[k].y = y_pos;
+      x_pos += hor_sep;
+      k++;
+    }
+    y_pos += ver_sep;
+  }
+  
   // start core 1 
   multicore_reset_core1();
   multicore_launch_core1(&core1_main);
