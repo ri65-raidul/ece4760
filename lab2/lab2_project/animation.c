@@ -102,7 +102,7 @@ const uint32_t transfer_count = sine_table_size ;
 
 // the color of the pegs
 char color = WHITE ;
-const char ball_color = PINK ;
+const char ball_color = GREEN ;
 const char TEXT_COLOR = GREEN ;
 const char HIST_COLOR = GREEN ;
 
@@ -121,7 +121,7 @@ typedef struct {
 } Boid;
 
 // Array of the boid
-static Boid boids[5000];
+static Boid boids[12500];
 
 // array for the histogram bins
 volatile int bins[15]; // only 15 gaps between pegs for a row of 16 pegs
@@ -153,10 +153,10 @@ const fix15 ALPHA = 1;
 const fix15 BETA = 1;
 
 // Global counters
-volatile long int active_balls = 3960;
+volatile long int active_balls = 11890;
 volatile long int prev_act_balls = 0;
 volatile long int total_balls = 0;
-volatile fix15 BOUNCINESS = float2fix15(0.5);
+volatile fix15 BOUNCINESS = float2fix15(0.8);
 
 typedef struct {
   int row;
@@ -394,20 +394,20 @@ void BouncePeg(fix15* x, fix15* y, fix15* vx, fix15* vy)
               //printf("%d, %d\n", fix2int15(dist), fix2int15(sum_radius));
               //printf("Enters if");
               //Generate normal vector
-              fix15 normal_x = divfix(dx, dist);
-              fix15 normal_y = divfix(dy, dist);
-              // fix15 normal_x;
-              // fix15 normal_y;
-              // if (dist > int2fix15(4)){
-              //   normal_x = dx>>3;
-              //   normal_y = dy>>3;
-              // } else if(dist >= int2fix15(2)) {
-              //   normal_x = dx>>2;
-              //   normal_y = dy>>2;
-              // } else {
-              //   normal_x = dx>>1;
-              //   normal_y = dy>>1;
-              // }
+              // fix15 normal_x = divfix(dx, dist);
+              // fix15 normal_y = divfix(dy, dist);
+              fix15 normal_x;
+              fix15 normal_y;
+              if (dist > int2fix15(4)){
+                normal_x = dx>>3;
+                normal_y = dy>>3;
+              } else if(dist >= int2fix15(2)) {
+                normal_x = dx>>2;
+                normal_y = dy>>2;
+              } else {
+                normal_x = dx>>1;
+                normal_y = dy>>1;
+              }
 
               // Collision physics
               fix15 intermediate_term = multfix15(int2fix15(-2), (multfix15(normal_x, *vx) + multfix15(normal_y, *vy)));
@@ -522,7 +522,7 @@ static PT_THREAD (protothread_anim(struct pt *pt))
       }
 
       for (int i = 0; i < prev_act_balls; i++){
-           fillCircle(fix2int15(boids[i].boid_x), fix2int15(boids[i].boid_y), fix2int15(BALL_RAD), ball_color) ;
+           drawCircleCustom(fix2int15(boids[i].boid_x), fix2int15(boids[i].boid_y), ball_color) ;
       }
       
       
@@ -612,7 +612,7 @@ static PT_THREAD (protothread_anim1(struct pt *pt))
         //fillRect(35 + (i * 38), 480, 36, (bins[i]*100)/bins_max, GREEN);
         drawTextTiny8(fix2int15(hor_center) - (14 * fix2int15(half_hor_sep)) + (i * fix2int15(hor_sep)), 360, bins_buff[i], TEXT_COLOR, BLACK);
         // 35 = hor_center - (15 * half_hor_sep)
-        fillRect((fix2int15(hor_center) - (15 * fix2int15(half_hor_sep)) + (i * fix2int15(hor_sep))), 480, fix2int15(hor_sep) - 2, (bins[i]*100)/bins_max, HIST_COLOR);
+        drawRect((fix2int15(hor_center) - (15 * fix2int15(half_hor_sep)) + (i * fix2int15(hor_sep))), 480, fix2int15(hor_sep) - 2, (bins[i]*100)/bins_max, HIST_COLOR);
         //printf("bins[%d] height: %d\n", i, (bins[i]*100)/bins_max);
 
       }
@@ -746,7 +746,7 @@ int main(){
   
 
   //initialize all boid values
-  for (int i = 0; i < 5000; i++) { // hard coded array length
+  for (int i = 0; i < 12500; i++) { // hard coded array length
     boids[i].boid_x = int2fix15(320);
     boids[i].boid_y = int2fix15(0);
     // 0000_0000_0111_1111

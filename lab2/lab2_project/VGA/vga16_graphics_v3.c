@@ -509,6 +509,57 @@ void drawRect(short x, short y, short w, short h, char color) {
   drawVLine(x+w-1, y, h, color);
 }
 
+void drawCircleCustom(short x0, short y0, char color) {
+/* Draw a circle outline with center (x0,y0) and radius r, with given color
+ * Parameters:
+ *      x0: x-coordinate of center of circle. The top-left of the screen
+ *          has x-coordinate 0 and increases to the right
+ *      y0: y-coordinate of center of circle. The top-left of the screen
+ *          has y-coordinate 0 and increases to the bottom
+ *      r:  radius of circle
+ *      color: 16-bit color value for the circle. Note that the circle
+ *          isn't filled. So, this is the color of the outline of the circle
+ * Returns: Nothing
+ */
+  // short f = 1 - r;
+  // short ddF_x = 1;
+  // short ddF_y = -2 * r;
+  // short x = 0;
+  // short y = r;
+
+
+  drawPixel(x0, y0+1, color);
+  drawPixel(x0, y0-1, color);
+
+  drawPixel(x0+1, y0, color);
+  drawPixel(x0-1, y0, color);
+
+  // drawPixel(x0  , y0+r, color);
+  // drawPixel(x0  , y0-r, color);
+  // drawPixel(x0+r, y0  , color);
+  // drawPixel(x0-r, y0  , color);
+
+  // while (x<y) {
+  //   if (f >= 0) {
+  //     y--;
+  //     ddF_y += 2;
+  //     f += ddF_y;
+  //   }
+  //   x++;
+  //   ddF_x += 2;
+  //   f += ddF_x;
+
+  //   drawPixel(x0 + x, y0 + y, color);
+  //   drawPixel(x0 - x, y0 + y, color);
+  //   drawPixel(x0 + x, y0 - y, color);
+  //   drawPixel(x0 - x, y0 - y, color);
+  //   drawPixel(x0 + y, y0 + x, color);
+  //   drawPixel(x0 - y, y0 + x, color);
+  //   drawPixel(x0 + y, y0 - x, color);
+  //   drawPixel(x0 - y, y0 - x, color);
+  
+}
+
 void drawCircle(short x0, short y0, short r, char color) {
 /* Draw a circle outline with center (x0,y0) and radius r, with given color
  * Parameters:
