@@ -153,7 +153,7 @@ const fix15 ALPHA = 1;
 const fix15 BETA = 1;
 
 // Global counters
-volatile long int active_balls =1250;
+volatile long int active_balls =4750;
 volatile long int prev_act_balls = 0;
 volatile long int total_balls = 0;
 volatile fix15 BOUNCINESS = float2fix15(0.5);
@@ -190,11 +190,11 @@ semaphore_t draw_semaphore ;
 
 // GPIO 2 ISR. Increases balls
 void gpio_callback(uint gpio, uint32_t event_mask) {
-    printf("enters callback\n");
+    //printf("enters callback\n");
     reset = 1;
 
     if(gpio == 4) {
-      printf("enters bounce\n");
+      //printf("enters bounce\n");
       bounce_mode = !bounce_mode;
     }
     
@@ -317,45 +317,51 @@ void BouncePeg(fix15* x, fix15* y, fix15* vx, fix15* vy)
       fix15 y_pos;
       fix15 x_pos;
 
-      // // Row calculation
-      // int i_start = 0;
-      // int i_limit = 0;
-      // // Variable to store y as int
-      // int y_fix = fix2int15(*y);
-      // if (y_fix < 50){
-      //   i_start = 0;
-      //   i_limit = 1;
-      // } else if (y_fix >= 50 && y_fix <= 335){
-      //   i_start = (y_fix-50)/19 + 1;
-      //   i_limit = i_start + 1;
-      // }
+      // Row calculation
+      int i_start = 0;
+      int i_limit = 0;
+      // Variable to store y as int
+      int y_fix = fix2int15(*y);
+      if (y_fix < 50){
+        i_start = 0;
+        i_limit = 1;
+      } else if (y_fix >= 50 && y_fix <= 335){
+        i_start = (y_fix-50)/19 + 1;
+        i_limit = i_start + 1;
+      }
 
       int k = 0;
 
       // row
-      for (int i = 0; i < 16; i++) {
+      for (int i = i_start; i < i_limit; i++) {
 
         //fix15 x_pos = hor_center - multfix15(half_hor_sep, int2fix15(i));
-        y_pos = peg_pos[k].y;
+        //y_pos = peg_pos[k].y;
 
         // Column calculation
-        // int j_start = 0;
-        // int j_limit = 0;
-        // // Variable to store x as int
-        // int x_fix = fix2int15(*x);
-        // j_start = (x_fix - (320 - 19*i_start))/38;
-        // if (j_start > 0){
-        //   j_start -= 1;
-        // }
-        // j_limit = j_start + 1;
-        // printf("x_pos: %d, y_pos: %d\n", x_fix, y_fix);
-        // printf("i_start: %d, i_limit: %d\n", i_start, i_limit);
-        // printf("j_start: %d, j_limit: %d\n\n\n\n", j_start, j_limit);
+        int j_start = 0;
+        int j_limit = 0;
+
+        // Variable to store x as int
+        int x_fix = fix2int15(*x);
+        j_start = (x_fix - (320 - 19*i_start))/38;
+        if (j_start > 0){
+          j_start -= 1;
+        }
+        if(j_start < 0)
+          j_start = 0;
+        j_limit = j_start + 1;
+        if(j_limit > i)
+          j_limit = i;
 
         // Loop through each pegs in each row
         // column
-        for (int j = 0; j <= i; j++) {
+        for (int j = j_start; j <= j_limit; j++) {
+
+          k = i*(i+1)/2 + j;
           x_pos = peg_pos[k].x;
+          y_pos = peg_pos[k].y;
+
           fix15 dx = *x - x_pos;
           fix15 dy = *y - y_pos;
 
@@ -432,7 +438,7 @@ void BouncePeg(fix15* x, fix15* y, fix15* vx, fix15* vy)
 
           }
           //x_pos += hor_sep;
-          k++;
+          //k++;
         }
         //y_pos += ver_sep;
       }
