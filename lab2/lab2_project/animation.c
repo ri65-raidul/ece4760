@@ -61,7 +61,7 @@ typedef signed int fix15 ;
 #define divfix(a,b) (fix15)(div_s64s64( (((signed long long)(a)) << 15), ((signed long long)(b))))
 
 // Wall detection
-#define hitBottom(b) (b>int2fix15(480))
+#define hitBottom(b) (b>int2fix15(350))
 #define hitTop(b) (b<int2fix15(0))
 #define hitLeft(a) (a<int2fix15(0))
 #define hitRight(a) (a>int2fix15(640))
@@ -135,9 +135,9 @@ fix15 boid1_vx ;
 fix15 boid1_vy ;
 
 
-const fix15 BALL_RAD = int2fix15(3);
-const fix15 PEG_RAD = int2fix15(5);
-const fix15 TOTAL_RAD = int2fix15(8);
+const fix15 BALL_RAD = int2fix15(4);
+const fix15 PEG_RAD = int2fix15(6);
+const fix15 TOTAL_RAD = int2fix15(10);
 
 
 const fix15 GRAVITY = float2fix15(0.37);
@@ -153,10 +153,11 @@ const fix15 ALPHA = 1;
 const fix15 BETA = 1;
 
 // Global counters
-volatile long int active_balls = 11890;
+volatile long int active_balls = 10000;
 volatile long int prev_act_balls = 0;
 volatile long int total_balls = 0;
-volatile fix15 BOUNCINESS = float2fix15(0.8);
+volatile fix15 BOUNCINESS = float2fix15(0.495);
+volatile long int frame_number =0;
 
 typedef struct {
   int row;
@@ -179,6 +180,7 @@ char buffer2[64];
 
 char video_buffer[64];
 char bins_buff[15][64];
+char frame_buffer[64];
 // Flags
 volatile int bounce_mode = 0;
 volatile int reset       = 0;
@@ -203,7 +205,7 @@ void gpio_callback(uint gpio, uint32_t event_mask) {
         //Counter Clockwise
         if(bounce_mode){
           if (BOUNCINESS > 0.0){
-            BOUNCINESS -= 327; //fix15 of 0.5
+            BOUNCINESS -= 327; //fix15 of 0.01
           }
         } else {
           if (active_balls > 0){
@@ -214,7 +216,7 @@ void gpio_callback(uint gpio, uint32_t event_mask) {
       } else {
           //Clockwise
           if(bounce_mode){
-            BOUNCINESS += 327; //fix15 of 0.5
+            BOUNCINESS += 327; //fix15 of 0.01
           }
           else {
             active_balls += 10;
@@ -237,12 +239,12 @@ void spawnBoidrand(fix15* x, fix15* y, fix15* vx, fix15* vy)
 {
   
   // Start in center of screen
-  *x = int2fix15(320) ;
-  *y = int2fix15(0) ;
+  *x = 10485760 ;
+  *y = 0 ;
 
 
   //*vx = float2fix15(dir);
-  fix15 rand_vx = (rand() & 0x7FFF) - 16384 ;
+  fix15 rand_vx = (rand() & 0x7FFF) - float2fix15(0.5) ;
   // rand_vx = rand_vx - 32768;
   // if (rand_vx == 0) {
   //   *vx = rand_vx + 0.01;
@@ -270,7 +272,7 @@ void wallsAndEdges(fix15* x, fix15* y, fix15* vx, fix15* vy)
     *vy = (-*vy) ;
     *y  = (*y + int2fix15(5)) ;
   }
-  if (hitBottom(*y)) {
+  if (hitBottom(*y) || hitRight(*x + 15) || hitLeft(*x - 15)) {
     total_balls += 1;
     
     for (int b = 0; b < 15; b++) {
@@ -288,14 +290,14 @@ void wallsAndEdges(fix15* x, fix15* y, fix15* vx, fix15* vy)
     
     spawnBoidrand(x, y, vx, vy);
   } 
-  if (hitRight(*x + 15)) {
-    *vx = (-*vx) ;
-    *x  = (*x - int2fix15(5)) ;
-  }
-  if (hitLeft(*x - 15)) {
-    *vx = (-*vx) ;
-    *x  = (*x + int2fix15(5)) ;
-  } 
+  // if (hitRight(*x + 15)) {
+  //   *vx = (-*vx) ;
+  //   *x  = (*x - int2fix15(5)) ;
+  // }
+  // if (hitLeft(*x - 15)) {
+  //   *vx = (-*vx) ;
+  //   *x  = (*x + int2fix15(5)) ;
+  // } 
 
   // Update position using velocity
   *x = *x + *vx ;
@@ -449,8 +451,6 @@ void BouncePeg(fix15* x, fix15* y, fix15* vx, fix15* vy)
   
 }
 
-
-
 // ==================================================
 // === users serial input thread
 // ==================================================
@@ -482,28 +482,30 @@ static PT_THREAD (protothread_serial(struct pt *pt))
   PT_END(pt);
 } // timer thread
 
+
+    volatile long int start_time = 0;
+    volatile long int end_time = 0;
+    volatile int frame_time = 0;
+
+
+
+
 // Animation on core 0
 static PT_THREAD (protothread_anim(struct pt *pt))
 {
     // Mark beginning of thread
     PT_BEGIN(pt);
+
+
     
     while(1) {
       // Wait for the signal that the buffer's changed
       PT_YIELD_UNTIL(pt, draw_start_signal()) ;
+      start_time = time_us_32();
       // Clear the buffer
       clearLowFrame(0, BLACK);
       // Signal core 1 that it can start drawing
       PT_SEM_SDK_SIGNAL(pt, &draw_semaphore) ;
-
-      // if (clockwise == 1) {
-      //   active_balls-=10;
-      //   clockwise = 0;
-      // }
-      // else if (clockwise == 2) {
-      //   active_balls+=10;
-      //   clockwise = 0;
-      // }
 
 
       // Spawn a boid if new ball is added
@@ -524,8 +526,9 @@ static PT_THREAD (protothread_anim(struct pt *pt))
       for (int i = 0; i < prev_act_balls; i++){
            drawCircleCustom(fix2int15(boids[i].boid_x), fix2int15(boids[i].boid_y), ball_color) ;
       }
-      
-      
+      frame_number++;
+      end_time = time_us_32();
+      frame_time = end_time - start_time;
 
      // NEVER exit while
     } // END WHILE(1)
@@ -539,6 +542,7 @@ static PT_THREAD (protothread_anim1(struct pt *pt))
     // Mark beginning of thread
     PT_BEGIN(pt);
     static uint64_t draw_time ;
+    static int frame_count = 0;
 
     draw_time = PT_GET_TIME_usec();
     // Spawn a peg
@@ -560,11 +564,14 @@ static PT_THREAD (protothread_anim1(struct pt *pt))
         y_pos += ver_sep;
       }
 
+     
     
 
     while(1) {
       // Wait for the signal from core 0
       PT_SEM_SDK_WAIT(pt, &draw_semaphore) ;
+      // start_time = PT_GET_TIME_usec();
+      
       
       // Spawn pegs for 16 rows
       if (reset) {
@@ -599,6 +606,9 @@ static PT_THREAD (protothread_anim1(struct pt *pt))
       sprintf(video_buffer, "Time: %4.1f ms", (float)(PT_GET_TIME_usec()-draw_time)/1000);
       drawTextTiny8(0, 50, video_buffer, TEXT_COLOR, BLACK) ;
 
+      
+
+
       //sprintf(buffer2, "Bounciness: %f\n", fix2float15(BOUNCINESS));
       //drawTextTiny8(0, 60, buffer2, GREEN, BLACK) ;
 
@@ -616,7 +626,12 @@ static PT_THREAD (protothread_anim1(struct pt *pt))
         //printf("bins[%d] height: %d\n", i, (bins[i]*100)/bins_max);
 
       }
+      frame_count++;
+      // end_time = PT_GET_TIME_usec();
+      // frame_time = end_time - start_time;
 
+      // sprintf(frame_buffer, "Frame Time: %4.4f us", (float)(frame_time));
+      // drawTextTiny8(0, 70, frame_buffer, TEXT_COLOR, BLACK) ;
       //printf("%d", active_balls);
       //fillCircle(fix2int15(boid1_x), fix2int15(boid1_y), fix2int15(PEG_RAD), color); 
      // NEVER exit while
@@ -750,9 +765,10 @@ int main(){
     boids[i].boid_x = int2fix15(320);
     boids[i].boid_y = int2fix15(0);
     // 0000_0000_0111_1111
-    boids[i].boid_vx = rand() & 0x7FFF - float2fix15(0.5); // randomization - change later
+    boids[i].boid_vx = (rand() & 0x7FFF) - float2fix15(0.5) ; // randomization - change later
     boids[i].boid_vy = int2fix15(0);
   }
+  //printf("%d", int2fix15(0));
 
   // Hardcoding all the positions of the pegs
   int k = 0;
