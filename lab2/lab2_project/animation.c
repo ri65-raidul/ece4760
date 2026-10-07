@@ -102,7 +102,7 @@ const uint32_t transfer_count = sine_table_size ;
 
 // the color of the pegs
 char color = WHITE ;
-const char ball_color = GREEN ;
+const char ball_color = PINK ;
 const char TEXT_COLOR = GREEN ;
 const char HIST_COLOR = GREEN ;
 
@@ -190,40 +190,38 @@ semaphore_t draw_semaphore ;
 
 // GPIO 2 ISR. Increases balls
 void gpio_callback(uint gpio, uint32_t event_mask) {
-
+    printf("enters callback\n");
     reset = 1;
-  
-    if (!gpio_get(3)) {
-        // Counter Clockwise
-        // if(bounce_mode){
-        //   if (BOUNCINESS > 0.0){
-        //     BOUNCINESS += 327;
-        //   }
-        // }
-        // else {
-          if (active_balls > 0){
-            active_balls-=100;
-          }
-       // }
 
-    } else {
-        //clockwise
-        // if(bounce_mode){
-        //   BOUNCINESS -= 327;
-        // }
-        // else {
-        
-          active_balls+=100;
-        //}
-
+    if(gpio == 4) {
+      printf("enters bounce\n");
+      bounce_mode = !bounce_mode;
     }
+    
+    if(gpio == 2){
+      if (gpio_get(3)) {
+        //Counter Clockwise
+        if(bounce_mode){
+          if (BOUNCINESS > 0.0){
+            BOUNCINESS -= 327; //fix15 of 0.5
+          }
+        } else {
+          if (active_balls > 0){
+            active_balls -= 10;
+          }
+        }
 
-    // if (!gpio_get(3)) {
-    //     // Counter Clockwise
-    //     clockwise = 1;
-    // } else {
-    //     clockwise = 2;
-    // }
+      } else {
+          //Clockwise
+          if(bounce_mode){
+            BOUNCINESS += 327; //fix15 of 0.5
+          }
+          else {
+            active_balls += 10;
+          }
+
+      }
+    }
   }
 
 // GPIO 4 SWITCH
