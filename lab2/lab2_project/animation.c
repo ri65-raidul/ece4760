@@ -153,7 +153,7 @@ const fix15 ALPHA = 1;
 const fix15 BETA = 1;
 
 // Global counters
-volatile long int active_balls =4750;
+volatile long int active_balls = 3960;
 volatile long int prev_act_balls = 0;
 volatile long int total_balls = 0;
 volatile fix15 BOUNCINESS = float2fix15(0.5);
@@ -326,14 +326,14 @@ void BouncePeg(fix15* x, fix15* y, fix15* vx, fix15* vy)
         i_start = 0;
         i_limit = 1;
       } else if (y_fix >= 50 && y_fix <= 335){
-        i_start = (y_fix-50)/19 + 1;
-        i_limit = i_start + 1;
+        i_start = (y_fix-50)/19;
+        i_limit = i_start + 2;
       }
 
       int k = 0;
 
       // row
-      for (int i = i_start; i < i_limit; i++) {
+      for (int i = i_start; i <= i_limit; i++) {
 
         //fix15 x_pos = hor_center - multfix15(half_hor_sep, int2fix15(i));
         //y_pos = peg_pos[k].y;
@@ -344,7 +344,7 @@ void BouncePeg(fix15* x, fix15* y, fix15* vx, fix15* vy)
 
         // Variable to store x as int
         int x_fix = fix2int15(*x);
-        j_start = (x_fix - (320 - 19*i_start))/38;
+        j_start = (x_fix - (320 - 19*i))/38;
         if (j_start > 0){
           j_start -= 1;
         }
@@ -356,9 +356,9 @@ void BouncePeg(fix15* x, fix15* y, fix15* vx, fix15* vy)
 
         // Loop through each pegs in each row
         // column
-        for (int j = j_start; j <= j_limit; j++) {
+        for (int j = j_start; j <= j_limit+1; j++) {
 
-          k = i*(i+1)/2 + j;
+          k = (i*(i+1))/2 + j;
           x_pos = peg_pos[k].x;
           y_pos = peg_pos[k].y;
 
@@ -394,20 +394,20 @@ void BouncePeg(fix15* x, fix15* y, fix15* vx, fix15* vy)
               //printf("%d, %d\n", fix2int15(dist), fix2int15(sum_radius));
               //printf("Enters if");
               //Generate normal vector
-              //fix15 normal_x = divfix(dx, dist);
-              //fix15 normal_y = divfix(dy, dist);
-              fix15 normal_x;
-              fix15 normal_y;
-              if (dist > int2fix15(4)){
-                normal_x = dx>>3;
-                normal_y = dy>>3;
-              } else if(dist >= int2fix15(2)) {
-                normal_x = dx>>2;
-                normal_y = dy>>2;
-              } else {
-                normal_x = dx>>1;
-                normal_y = dy>>1;
-              }
+              fix15 normal_x = divfix(dx, dist);
+              fix15 normal_y = divfix(dy, dist);
+              // fix15 normal_x;
+              // fix15 normal_y;
+              // if (dist > int2fix15(4)){
+              //   normal_x = dx>>3;
+              //   normal_y = dy>>3;
+              // } else if(dist >= int2fix15(2)) {
+              //   normal_x = dx>>2;
+              //   normal_y = dy>>2;
+              // } else {
+              //   normal_x = dx>>1;
+              //   normal_y = dy>>1;
+              // }
 
               // Collision physics
               fix15 intermediate_term = multfix15(int2fix15(-2), (multfix15(normal_x, *vx) + multfix15(normal_y, *vy)));
