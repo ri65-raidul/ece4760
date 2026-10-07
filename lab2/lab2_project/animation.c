@@ -52,13 +52,23 @@
 // === the fixed point macros ========================================
 typedef signed int fix15 ;
 #define multfix15(a,b) ((fix15)((((signed long long)(a))*((signed long long)(b)))>>15))
-#define float2fix15(a) ((fix15)((a)*32768.0)) // 2^15
+#define float2fix15(a) ((fix15)((a)*32768.0)) // 2^15 = 32768
 #define fix2float15(a) ((float)(a)/32768.0)
 #define absfix15(a) abs(a) 
 #define int2fix15(a) ((fix15)(a << 15))
 #define fix2int15(a) ((int)(a >> 15))
 #define char2fix15(a) (fix15)(((fix15)(a)) << 15)
 #define divfix(a,b) (fix15)(div_s64s64( (((signed long long)(a)) << 15), ((signed long long)(b))))
+
+// typedef signed short int fix8 ; // actually fix8 lol
+// #define multfix15(a,b) ((fix8)((((signed int)(a))*((signed int)(b)))>>8))
+// #define float2fix15(a) ((fix15)((a)*256.0)) // 2^15 = 32768
+// #define fix2float15(a) ((float)(a)/256.0)
+// #define absfix15(a) abs(a) 
+// #define int2fix15(a) ((fix15)(a << 8))
+// #define fix2int15(a) ((int)(a >> 8))
+// #define char2fix15(a) (fix15)(((fix15)(a)) << 8)
+//#define divfix(a,b) (fix15)(div_s64s64( (((signed int)(a)) << 8), ((signed int)(b))))
 
 // Wall detection
 #define hitBottom(b) (b>int2fix15(350))
@@ -121,7 +131,8 @@ typedef struct {
 } Boid;
 
 // Array of the boid
-static Boid boids[12500];
+static Boid boids1[6250];
+static Boid boids2[6250];
 
 // array for the histogram bins
 volatile int bins[15]; // only 15 gaps between pegs for a row of 16 pegs
@@ -153,7 +164,7 @@ const fix15 ALPHA = 1;
 const fix15 BETA = 1;
 
 // Global counters
-volatile long int active_balls = 10000;
+volatile long int active_balls = 12500;
 volatile long int prev_act_balls = 0;
 volatile long int total_balls = 0;
 volatile fix15 BOUNCINESS = float2fix15(0.495);
@@ -205,7 +216,7 @@ void gpio_callback(uint gpio, uint32_t event_mask) {
         //Counter Clockwise
         if(bounce_mode){
           if (BOUNCINESS > 0.0){
-            BOUNCINESS -= 327; //fix15 of 0.01
+            BOUNCINESS -= 327 ;//float2fix15(0.01) ; //1; //fix7 of 0.01
           }
         } else {
           if (active_balls > 0){
@@ -216,7 +227,7 @@ void gpio_callback(uint gpio, uint32_t event_mask) {
       } else {
           //Clockwise
           if(bounce_mode){
-            BOUNCINESS += 327; //fix15 of 0.01
+            BOUNCINESS += 327 ; //float2fix15(0.01) ; // 1; //fix7 of 0.01
           }
           else {
             active_balls += 10;
@@ -239,7 +250,7 @@ void spawnBoidrand(fix15* x, fix15* y, fix15* vx, fix15* vy)
 {
   
   // Start in center of screen
-  *x = 10485760 ;
+  *x = 10485760;//int2fix15(320) ;//-24576 ; //320 ;
   *y = 0 ;
 
 
@@ -510,22 +521,23 @@ static PT_THREAD (protothread_anim(struct pt *pt))
 
       // Spawn a boid if new ball is added
       if (prev_act_balls != active_balls) {
-        spawnBoidrand(&boids[prev_act_balls].boid_x, &boids[prev_act_balls].boid_y, &boids[prev_act_balls].boid_vx, &boids[prev_act_balls].boid_vy);
+        //spawnBoidrand(&boids[prev_act_balls].boid_x, &boids[prev_act_balls].boid_y, &boids[prev_act_balls].boid_vx, &boids[prev_act_balls].boid_vy);
         prev_act_balls = active_balls;
       }
 
-      for (int i = 0; i < prev_act_balls; i++){
-          BouncePeg(&boids[i].boid_x, &boids[i].boid_y, &boids[i].boid_vx, &boids[i].boid_vy);
+      for (int i = 0; i < (prev_act_balls * 0.5); i++){
+          BouncePeg(&boids1[i].boid_x, &boids1[i].boid_y, &boids1[i].boid_vx, &boids1[i].boid_vy);
 
       }
 
-      for (int i = 0; i < prev_act_balls; i++) {
-           wallsAndEdges(&boids[i].boid_x, &boids[i].boid_y, &boids[i].boid_vx, &boids[i].boid_vy) ;
+      for (int i = 0; i < (prev_act_balls * 0.5); i++) {
+           wallsAndEdges(&boids1[i].boid_x, &boids1[i].boid_y, &boids1[i].boid_vx, &boids1[i].boid_vy) ;
       }
 
-      for (int i = 0; i < prev_act_balls; i++){
-           drawCircleCustom(fix2int15(boids[i].boid_x), fix2int15(boids[i].boid_y), ball_color) ;
+      for (int i = 0; i < (prev_act_balls * 0.5); i++){
+           drawCircleCustom(fix2int15(boids1[i].boid_x), fix2int15(boids1[i].boid_y), ball_color) ;
       }
+      
       frame_number++;
       end_time = time_us_32();
       frame_time = end_time - start_time;
@@ -606,12 +618,6 @@ static PT_THREAD (protothread_anim1(struct pt *pt))
       sprintf(video_buffer, "Time: %4.1f ms", (float)(PT_GET_TIME_usec()-draw_time)/1000);
       drawTextTiny8(0, 50, video_buffer, TEXT_COLOR, BLACK) ;
 
-      
-
-
-      //sprintf(buffer2, "Bounciness: %f\n", fix2float15(BOUNCINESS));
-      //drawTextTiny8(0, 60, buffer2, GREEN, BLACK) ;
-
       sprintf(buffer2, "BOUNCINESS: %1.3f", fix2float15(BOUNCINESS));
       drawTextTiny8(0, 60, buffer2, TEXT_COLOR, BLACK) ;
 
@@ -626,14 +632,24 @@ static PT_THREAD (protothread_anim1(struct pt *pt))
         //printf("bins[%d] height: %d\n", i, (bins[i]*100)/bins_max);
 
       }
-      frame_count++;
-      // end_time = PT_GET_TIME_usec();
-      // frame_time = end_time - start_time;
+    
 
-      // sprintf(frame_buffer, "Frame Time: %4.4f us", (float)(frame_time));
-      // drawTextTiny8(0, 70, frame_buffer, TEXT_COLOR, BLACK) ;
-      //printf("%d", active_balls);
-      //fillCircle(fix2int15(boid1_x), fix2int15(boid1_y), fix2int15(PEG_RAD), color); 
+      for (int i = 0; i < (prev_act_balls * 0.5); i++){
+          BouncePeg(&boids2[i].boid_x, &boids2[i].boid_y, &boids2[i].boid_vx, &boids2[i].boid_vy);
+
+      }
+
+      for (int i = 0; i < (prev_act_balls * 0.5); i++) {
+           wallsAndEdges(&boids2[i].boid_x, &boids2[i].boid_y, &boids2[i].boid_vx, &boids2[i].boid_vy) ;
+      }
+
+      for (int i = 0; i < (prev_act_balls * 0.5); i++){
+           drawCircleCustom(fix2int15(boids2[i].boid_x), fix2int15(boids2[i].boid_y), ball_color) ;
+      }
+
+      //printf("fix7 of 0.01: %d", float2fix15(0.01));
+      //printf("fix7 of 320: %d", int2fix15(320));
+      frame_count++;
      // NEVER exit while
     } // END WHILE(1)
   PT_END(pt);
@@ -761,12 +777,18 @@ int main(){
   
 
   //initialize all boid values
-  for (int i = 0; i < 12500; i++) { // hard coded array length
-    boids[i].boid_x = int2fix15(320);
-    boids[i].boid_y = int2fix15(0);
+  for (int i = 0; i < 6250; i++) { // hard coded array length
+    boids1[i].boid_x = int2fix15(320);
+    boids1[i].boid_y = int2fix15(0);
     // 0000_0000_0111_1111
-    boids[i].boid_vx = (rand() & 0x7FFF) - float2fix15(0.5) ; // randomization - change later
-    boids[i].boid_vy = int2fix15(0);
+    boids1[i].boid_vx = (rand() & 0x7FFF) - float2fix15(0.5) ; // randomization - change later
+    boids1[i].boid_vy = int2fix15(0);
+
+    boids2[i].boid_x = int2fix15(320);
+    boids2[i].boid_y = int2fix15(0);
+    // 0000_0000_0111_1111
+    boids2[i].boid_vx = (rand() & 0x7FFF) - float2fix15(0.5) ; // randomization - change later
+    boids2[i].boid_vy = int2fix15(0);
   }
   //printf("%d", int2fix15(0));
 
