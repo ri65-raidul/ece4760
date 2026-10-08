@@ -215,22 +215,20 @@ void gpio_callback(uint gpio, uint32_t event_mask) {
       if (gpio_get(3)) {
         //Counter Clockwise
         if(bounce_mode){
-          if (BOUNCINESS > 0.0){
-            BOUNCINESS -= 327 ;//float2fix15(0.01) ; //1; //fix7 of 0.01
-          }
+          BOUNCINESS += 327 ;//float2fix15(0.01) ; //1; //fix7 of 0.01
         } else {
-          if (active_balls > 0){
-            active_balls -= 10;
-          }
+          active_balls += 10;
         }
 
       } else {
           //Clockwise
           if(bounce_mode){
-            BOUNCINESS += 327 ; //float2fix15(0.01) ; // 1; //fix7 of 0.01
+            if (BOUNCINESS > 0.0)
+              BOUNCINESS -= 327 ; //float2fix15(0.01) ; // 1; //fix7 of 0.01
           }
           else {
-            active_balls += 10;
+            if (active_balls > 0)
+              active_balls -= 10;
           }
 
       }
@@ -251,7 +249,7 @@ void spawnBoidrand(fix15* x, fix15* y, fix15* vx, fix15* vy)
   
   // Start in center of screen
   *x = 10485760;//int2fix15(320) ;//-24576 ; //320 ;
-  *y = 0 ;
+  *y = int2fix15(25);
 
 
   //*vx = float2fix15(dir);
@@ -279,7 +277,7 @@ void spawnPeg(fix15 x_pos, fix15 y_pos, fix15* x, fix15* y)
 void wallsAndEdges(fix15* x, fix15* y, fix15* vx, fix15* vy)
 {
   // Reverse direction if we've hit a wall
-  if (hitTop(*y - 15)) {
+  if (hitTop(*y )) {
     *vy = (-*vy) ;
     *y  = (*y + int2fix15(5)) ;
   }
@@ -541,6 +539,11 @@ static PT_THREAD (protothread_anim(struct pt *pt))
       frame_number++;
       end_time = time_us_32();
       frame_time = end_time - start_time;
+      if (frame_time > 16667) {
+        gpio_put(25, 1);
+      } else {
+        gpio_put(25, 0);
+      }
 
      // NEVER exit while
     } // END WHILE(1)
@@ -779,7 +782,7 @@ int main(){
   //initialize all boid values
   for (int i = 0; i < 6250; i++) { // hard coded array length
     boids1[i].boid_x = int2fix15(320);
-    boids1[i].boid_y = int2fix15(0);
+    boids1[i].boid_y = int2fix15(25);
     // 0000_0000_0111_1111
     boids1[i].boid_vx = (rand() & 0x7FFF) - float2fix15(0.5) ; // randomization - change later
     boids1[i].boid_vy = int2fix15(0);
