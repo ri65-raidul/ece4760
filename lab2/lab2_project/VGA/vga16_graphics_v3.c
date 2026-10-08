@@ -73,7 +73,7 @@ DrawPixel is faster
 // #define RGB_ACTIVE 639 // change to this if 1 pixel/byte
 
 // Length of the pixel array, and number of DMA transfers
-#define VGA_BUFFER_COUNT 153600 // Total pixels/2 (since we have 2 pixels per byte)
+#define VGA_BUFFER_COUNT 38400 // Total pixels/2 (since we have 2 pixels per byte)
 
 // ===============================
 // !!!=========================!!!
@@ -141,6 +141,7 @@ char textcolor, textbgcolor, wrap;
 void initVGA() {
     // Choose which PIO instance to use (there are two instances, each with 4 state machines)
     PIO pio = pio0;
+    PIO rgb_pio = pio1;
 
     // Our assembled program needs to be loaded into this PIO's instruction
     // memory. This SDK function will find a location (offset) in the
@@ -154,7 +155,7 @@ void initVGA() {
     // and is of the form <program name_program>
     uint hsync_offset = pio_add_program(pio, &hsync_program);
     uint vsync_offset = pio_add_program(pio, &vsync_program);
-    uint rgb_offset = pio_add_program(pio, &rgb_program);
+    uint rgb_offset = pio_add_program(rgb_pio, &rgb_program);
 
     // Manually select a few state machines from pio instance pio0.
     // void pio_sm_claim (PIO pio, uint sm)
@@ -163,7 +164,7 @@ void initVGA() {
     uint rgb_sm = 2;
     pio_sm_claim (pio, hsync_sm);
     pio_sm_claim (pio, vsync_sm);
-    pio_sm_claim (pio, rgb_sm);
+    pio_sm_claim (rgb_pio, rgb_sm);
 
     // Call the initialization functions that are defined within each PIO file.
     // Why not create these programs here? By putting the initialization function in
@@ -171,7 +172,7 @@ void initVGA() {
     // is consolidated in one place. Here in the C, we then just import and use it.
     hsync_program_init(pio, hsync_sm, hsync_offset, HSYNC);
     vsync_program_init(pio, vsync_sm, vsync_offset, VSYNC);
-    rgb_program_init(pio, rgb_sm, rgb_offset, LO_GRN);
+    rgb_program_init(rgb_pio, rgb_sm, rgb_offset, LO_GRN);
 
     /////////////////////////////////////////////////////////////////////////////////////////////////////
     // ============================== PIO DMA Channels =================================================
@@ -254,14 +255,15 @@ void initVGA() {
     channel_config_set_transfer_data_size(&c0, DMA_SIZE_8);              // 8-bit txfers
     channel_config_set_read_increment(&c0, true);                        // yes read incrementing
     channel_config_set_write_increment(&c0, false);                      // no write incrementing
-    channel_config_set_dreq(&c0, DREQ_PIO0_TX2) ;                        // DREQ_PIO0_TX2 pacing (FIFO)
+    //channel_config_set_dreq(&c0, DREQ_PIO0_TX2) ;                        // DREQ_PIO0_TX2 pacing (FIFO)
+    channel_config_set_dreq(&c0, pio_get_dreq(rgb_pio, rgb_sm, true)) ; 
     channel_config_set_chain_to(&c0, set_disp_chan);                        // chain to other channel
     channel_config_set_high_priority (&c0, rgb_high_priority) ;
 
     dma_channel_configure(
         rgb_data_chan,                 // Channel to be configured
         &c0,                        // The configuration we just created
-        &pio->txf[rgb_sm],          // write address (RGB PIO TX FIFO)
+        &rgb_pio->txf[rgb_sm],          // write address (RGB PIO TX FIFO)
         &vga_buffer_0,            // The initial read address (pixel color array)
         VGA_BUFFER_COUNT,           // Number of transfers; in this case each is 1 byte.
         false                       // Don't start immediately.
@@ -329,14 +331,16 @@ void initVGA() {
     // in the assembly. Each uses these values to initialize some counting registers.
     pio_sm_put_blocking(pio, hsync_sm, H_ACTIVE);
     pio_sm_put_blocking(pio, vsync_sm, V_ACTIVE);
-    pio_sm_put_blocking(pio, rgb_sm, RGB_ACTIVE);
+    pio_sm_put_blocking(rgb_pio, rgb_sm, RGB_ACTIVE);
+    pio_sm_set_enabled(rgb_pio, rgb_sm, true);
+    pio_enable_sm_mask_in_sync(pio, (1u << hsync_sm) | (1u << vsync_sm));
 
 
     // Start the two pio machine IN SYNC
     // Note that the RGB state machine is running at full speed,
     // so synchronization doesn't matter for that one. But, we'll
     // start them all simultaneously anyway.
-    pio_enable_sm_mask_in_sync(pio, ((1u << hsync_sm) | (1u << vsync_sm) | (1u << rgb_sm)));
+    //pio_enable_sm_mask_in_sync(pio, ((1u << hsync_sm) | (1u << vsync_sm) | (1u << rgb_sm)));
 
     // Start DMA channel 0. Once started, the contents of the pixel color array
     // will be continously DMA's to the PIO machines that are driving the screen.
@@ -360,17 +364,38 @@ void drawPixel(short x, short y, char color) {
     // Which pixel is it?
     // shift by one to get the byte (two pixels/byte)
     //int pixel = (640 * y + x) >> 1;
-    char * draw_loc = (current_draw_buffer + ((640 * y + x) >> 1)) ;
+    char * draw_loc = (current_draw_buffer + ((640 * y + x) >> 3)) ;
     // Is this pixel stored in the first 4 bits
     // of the vga data array index, or the second
     // 4 bits? Check, then mask.
     // draws to the current_draw_buffer
-    if (x & 1) {
-        *(draw_loc) = (*(draw_loc) & TOPMASK) | (color << 4) ;
-    }
-    else {
-        *(draw_loc) = (*(draw_loc) & BOTTOMMASK) | (color) ;
-    }
+    // if (x & 1) {
+    //     *(draw_loc) = (*(draw_loc) & TOPMASK) | (color << 4) ;
+    // }
+    // else {
+    //     *(draw_loc) = (*(draw_loc) & BOTTOMMASK) | (color) ;
+    // }
+    // if (x & 0b00000001) {
+    //   *(draw_loc) = (*(draw_loc) & 0b00000001) | (color) ;
+    // } else if (x & 0b00000010) {
+    //   *(draw_loc) = (*(draw_loc) & 0b00000010) | (color << 1) ;
+    // } else if (x & 0b00000100) {
+    //   *(draw_loc) = (*(draw_loc) & 0b00000100) | (color << 2) ;
+    // } else if (x & 0b00001000) {
+    //   *(draw_loc) = (*(draw_loc) & 0b00001000) | (color << 3) ;
+    // } else if (x & 0b00010000) {
+    //   *(draw_loc) = (*(draw_loc) & 0b00010000) | (color << 4) ;
+    // } else if (x & 0b00100000) {
+    //   *(draw_loc) = (*(draw_loc) & 0b00100000) | (color << 5) ;
+    // } else if (x & 0b01000000) {
+    //   *(draw_loc) = (*(draw_loc) & 0b01000000) | (color << 6) ;
+    // } else {
+    //   *(draw_loc) = (*(draw_loc) & 0b10000000) | (color << 7) ;
+    // }
+    int bitshift = x & 0x7 ;
+    *(draw_loc) = (*(draw_loc) & ~(1 << (x & 0x7))) | (color << bitshift) ;
+
+
 }
 
 // Check status of neighbors
@@ -431,9 +456,9 @@ void drawHLine(int x, int y, int w, char color) {
     w-- ;
   }
   // draw rest of line
-  int len = (w>>1)  ;
+  int len = (w>>3)  ;
   if (len>0  )  //&& len+x < 640 && y<480
-    memset(current_draw_buffer+(320*y+(x>>1)), both_color, len) ;
+    memset(current_draw_buffer+(320*y+(x>>3)), both_color, len) ;
 }
 
 // general line drawing
