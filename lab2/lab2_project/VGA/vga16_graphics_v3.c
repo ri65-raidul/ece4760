@@ -363,35 +363,11 @@ void drawPixel(short x, short y, char color) {
 
     // Which pixel is it?
     // shift by one to get the byte (two pixels/byte)
-    //int pixel = (640 * y + x) >> 1;
     char * draw_loc = (current_draw_buffer + ((640 * y + x) >> 3)) ;
     // Is this pixel stored in the first 4 bits
     // of the vga data array index, or the second
     // 4 bits? Check, then mask.
     // draws to the current_draw_buffer
-    // if (x & 1) {
-    //     *(draw_loc) = (*(draw_loc) & TOPMASK) | (color << 4) ;
-    // }
-    // else {
-    //     *(draw_loc) = (*(draw_loc) & BOTTOMMASK) | (color) ;
-    // }
-    // if (x & 0b00000001) {
-    //   *(draw_loc) = (*(draw_loc) & 0b00000001) | (color) ;
-    // } else if (x & 0b00000010) {
-    //   *(draw_loc) = (*(draw_loc) & 0b00000010) | (color << 1) ;
-    // } else if (x & 0b00000100) {
-    //   *(draw_loc) = (*(draw_loc) & 0b00000100) | (color << 2) ;
-    // } else if (x & 0b00001000) {
-    //   *(draw_loc) = (*(draw_loc) & 0b00001000) | (color << 3) ;
-    // } else if (x & 0b00010000) {
-    //   *(draw_loc) = (*(draw_loc) & 0b00010000) | (color << 4) ;
-    // } else if (x & 0b00100000) {
-    //   *(draw_loc) = (*(draw_loc) & 0b00100000) | (color << 5) ;
-    // } else if (x & 0b01000000) {
-    //   *(draw_loc) = (*(draw_loc) & 0b01000000) | (color << 6) ;
-    // } else {
-    //   *(draw_loc) = (*(draw_loc) & 0b10000000) | (color << 7) ;
-    // }
     int bitshift = x & 0x7 ;
     *(draw_loc) = (*(draw_loc) & ~(1 << (x & 0x7))) | (color << bitshift) ;
 
