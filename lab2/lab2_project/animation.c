@@ -60,16 +60,6 @@ typedef signed int fix15 ;
 #define char2fix15(a) (fix15)(((fix15)(a)) << 15)
 #define divfix(a,b) (fix15)(div_s64s64( (((signed long long)(a)) << 15), ((signed long long)(b))))
 
-// typedef signed short int fix8 ; // actually fix8 lol
-// #define multfix15(a,b) ((fix8)((((signed int)(a))*((signed int)(b)))>>8))
-// #define float2fix15(a) ((fix15)((a)*256.0)) // 2^15 = 32768
-// #define fix2float15(a) ((float)(a)/256.0)
-// #define absfix15(a) abs(a) 
-// #define int2fix15(a) ((fix15)(a << 8))
-// #define fix2int15(a) ((int)(a >> 8))
-// #define char2fix15(a) (fix15)(((fix15)(a)) << 8)
-//#define divfix(a,b) (fix15)(div_s64s64( (((signed int)(a)) << 8), ((signed int)(b))))
-
 // Wall detection
 #define hitBottom(b) (b>int2fix15(350))
 #define hitTop(b) (b<int2fix15(0))
@@ -78,7 +68,6 @@ typedef signed int fix15 ;
 
 // uS per frame
 #define FRAME_RATE 16500
-
 
 //DMA
 // Number of samples per period in sine table
@@ -205,34 +194,28 @@ semaphore_t draw_semaphore ;
 void gpio_callback(uint gpio, uint32_t event_mask) {
     //printf("enters callback\n");
     reset = 1;
-
-    if(gpio == 4) {
-      //printf("enters bounce\n");
-      bounce_mode = !bounce_mode;
-    }
-    
-    if(gpio == 2){
+  
       if (gpio_get(3)) {
         //Counter Clockwise
         if(bounce_mode){
-          BOUNCINESS += 327 ;//float2fix15(0.01) ; //1; //fix7 of 0.01
+          BOUNCINESS -= 327 ; //fix15 of 0.01
         } else {
-          active_balls += 10;
+          active_balls -= 10;
         }
 
       } else {
           //Clockwise
           if(bounce_mode){
             if (BOUNCINESS > 0.0)
-              BOUNCINESS -= 327 ; //float2fix15(0.01) ; // 1; //fix7 of 0.01
+              BOUNCINESS += 327 ; //fix15 of 0.01
           }
           else {
             if (active_balls > 0)
-              active_balls -= 10;
+              active_balls += 10;
           }
 
       }
-    }
+    
   }
 
 // GPIO 4 SWITCH
@@ -241,14 +224,12 @@ void gpio_switch(uint gpio, uint32_t event_mask) {
   bounce_mode = !bounce_mode;
 }
 
-
-
 // Create a boid
 void spawnBoidrand(fix15* x, fix15* y, fix15* vx, fix15* vy)
 {
   
   // Start in center of screen
-  *x = 10485760;//int2fix15(320) ;//-24576 ; //320 ;
+  *x = 10485760; //320
   *y = int2fix15(25);
 
 
@@ -287,11 +268,11 @@ void wallsAndEdges(fix15* x, fix15* y, fix15* vx, fix15* vy)
     for (int b = 0; b < 15; b++) {
       if ((fix2int15(*x) > 35 + b * 38) && (fix2int15(*x) < 35 + (b + 1)*38)) {
         bins[b] += 1;
-        //printf("Bins[b]: %d\n", bins[b]);
+        
         // Updating bins max
         if (bins[b] > bins_max) {
           bins_max = bins[b];
-          //printf("Bins Max: %d\n", bins_max);
+          
         }
       }
     }
@@ -299,14 +280,6 @@ void wallsAndEdges(fix15* x, fix15* y, fix15* vx, fix15* vy)
     
     spawnBoidrand(x, y, vx, vy);
   } 
-  // if (hitRight(*x + 15)) {
-  //   *vx = (-*vx) ;
-  //   *x  = (*x - int2fix15(5)) ;
-  // }
-  // if (hitLeft(*x - 15)) {
-  //   *vx = (-*vx) ;
-  //   *x  = (*x + int2fix15(5)) ;
-  // } 
 
   // Update position using velocity
   *x = *x + *vx ;
@@ -345,9 +318,6 @@ void BouncePeg(fix15* x, fix15* y, fix15* vx, fix15* vy)
 
       // row
       for (int i = i_start; i <= i_limit; i++) {
-
-        //fix15 x_pos = hor_center - multfix15(half_hor_sep, int2fix15(i));
-        //y_pos = peg_pos[k].y;
 
         // Column calculation
         int j_start = 0;
@@ -393,20 +363,10 @@ void BouncePeg(fix15* x, fix15* y, fix15* vx, fix15* vy)
               min = abs_dx;
             }
             fix15 dist = (max) + (min>>2);
-            //printf("%d, ", fix2int15(dist));
-
-            //fix15 dist = float2fix15(sqrtf( fix2float15(multfix15(dx, dx)) + fix2float15(multfix15(dy, dy)) ));
-
-            // printf("dx squared: %d\n", fix2int15(multfix15(dx,dx)));
-            // printf("dy squared: %d\n", fix2int15(multfix15(dy,dy)));
-            //printf("Dist: %d\n", (int)(dist >> 15));
 
             if(dist < (sum_radius)){
-              //printf("%d, %d\n", fix2int15(dist), fix2int15(sum_radius));
-              //printf("Enters if");
+              
               //Generate normal vector
-              // fix15 normal_x = divfix(dx, dist);
-              // fix15 normal_y = divfix(dy, dist);
               fix15 normal_x;
               fix15 normal_y;
               if (dist > int2fix15(4)){
@@ -448,10 +408,9 @@ void BouncePeg(fix15* x, fix15* y, fix15* vx, fix15* vy)
             }
 
           }
-          //x_pos += hor_sep;
-          //k++;
+          
         }
-        //y_pos += ver_sep;
+      
       }
   
   
@@ -519,7 +478,7 @@ static PT_THREAD (protothread_anim(struct pt *pt))
 
       // Spawn a boid if new ball is added
       if (prev_act_balls != active_balls) {
-        //spawnBoidrand(&boids[prev_act_balls].boid_x, &boids[prev_act_balls].boid_y, &boids[prev_act_balls].boid_vx, &boids[prev_act_balls].boid_vy);
+        
         prev_act_balls = active_balls;
       }
 
@@ -536,13 +495,8 @@ static PT_THREAD (protothread_anim(struct pt *pt))
            drawCircleCustom(fix2int15(boids1[i].boid_x), fix2int15(boids1[i].boid_y), ball_color) ;
       }
       for(int i = 0; i < 15; i++){
-        //sprintf(bins_buff[i], "%d", bins[i]);
-        //drawTextTiny8(54 +  (i * 38), 360, bins_buff[i], GREEN, BLACK);
-        //fillRect(35 + (i * 38), 480, 36, (bins[i]*100)/bins_max, GREEN);
-        //drawTextTiny8(fix2int15(hor_center) - (14 * fix2int15(half_hor_sep)) + (i * fix2int15(hor_sep)), 360, bins_buff[i], TEXT_COLOR, BLACK);
-        // 35 = hor_center - (15 * half_hor_sep)
+       
         drawRect((fix2int15(hor_center) - (15 * fix2int15(half_hor_sep)) + (i * fix2int15(hor_sep))), 480, fix2int15(hor_sep) - 2, (bins[i]*100)/bins_max, HIST_COLOR);
-        //printf("bins[%d] height: %d\n", i, (bins[i]*100)/bins_max);
 
       }
 
@@ -577,8 +531,6 @@ static PT_THREAD (protothread_anim1(struct pt *pt))
 
     draw_time = PT_GET_TIME_usec();
     // Spawn a peg
-    //spawnPeg(hor_center, ver_top, &boid1_x, &boid1_y);
-
     fix15 y_pos = ver_top;
 
         for (int i = 0; i < 16; i++) {
@@ -588,8 +540,7 @@ static PT_THREAD (protothread_anim1(struct pt *pt))
         // Loop to spawn pegs in each row
         for (int j = 0; j <= i; j++) {
           spawnPeg(x_pos, y_pos, &boid1_x, &boid1_y);
-          //printf("xpos: %d", fix2int15(x_pos), " y-pos: %d\n", fix2int15(y_pos));
-          //fillCircle(fix2int15(boid1_x), fix2int15(boid1_y), fix2int15(PEG_RAD), color); 
+        
           x_pos += hor_sep;
         }
         y_pos += ver_sep;
@@ -601,7 +552,6 @@ static PT_THREAD (protothread_anim1(struct pt *pt))
     while(1) {
       // Wait for the signal from core 0
       PT_SEM_SDK_WAIT(pt, &draw_semaphore) ;
-      // start_time = PT_GET_TIME_usec();
       
       
       // Spawn pegs for 16 rows
@@ -650,8 +600,6 @@ static PT_THREAD (protothread_anim1(struct pt *pt))
            drawCircleCustom(fix2int15(boids2[i].boid_x), fix2int15(boids2[i].boid_y), ball_color) ;
       }
 
-      //printf("fix7 of 0.01: %d", float2fix15(0.01));
-      //printf("fix7 of 320: %d", int2fix15(320));
       frame_count++;
      // NEVER exit while
     } // END WHILE(1)
@@ -662,10 +610,6 @@ static PT_THREAD (protothread_anim1(struct pt *pt))
 // === core 1 main -- started in main below
 // ========================================
 void core1_main(){
-  //set_sys_clock_khz(375000, true) ;
-  // initialize stio
-  //stdio_init_all() ;
-  
   gpio_init(4) ;
   gpio_set_dir(4, GPIO_IN);
   gpio_pull_up(4);
@@ -702,15 +646,9 @@ int main(){
   gpio_set_dir(2, GPIO_IN) ;
   gpio_set_dir(3, GPIO_IN) ;
   gpio_set_dir(25,GPIO_OUT);
-  //gpio_set_dir(4, GPIO_IN);
 
 
-  //gpio_pull_up(2) ;
-  //gpio_pull_up(3) ;
-  //gpio_pull_up(4);
-
-  gpio_set_irq_enabled_with_callback(2, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
-  //gpio_set_irq_enabled_with_callback(4, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
+  gpio_set_irq_enabled_with_callback(2, GPIO_IRQ_EDGE_RISE, true, &gpio_callback);
 
   // Initialize the semaphore
   // Arguments: pointer to sem, initial count, max count
@@ -776,7 +714,7 @@ int main(){
         sine_table_size,            // Number of transfers
         false                       // Don't start immediately.
     );
-  //==================================== DAC SECTION =========================================
+  //==================================== DAC SECTION END =========================================
   
 
   //initialize all boid values
