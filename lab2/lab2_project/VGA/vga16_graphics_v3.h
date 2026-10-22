@@ -22,13 +22,10 @@
 
 
 // Give the I/O pins that we're using some names that make sense - usable in main()
- enum vga_pins {HSYNC=16, VSYNC, LO_GRN, HI_GRN, BLUE_PIN, RED_PIN} ;
+ enum vga_pins {HSYNC=16, VSYNC, LO_GRN} ;
 
 // We can only produce 16 (4-bit) colors, so let's give them readable names - usable in main()
-enum colors {BLACK, DARK_GREEN, MED_GREEN, GREEN,
-            DARK_BLUE, BLUE, LIGHT_BLUE, CYAN,
-            RED, DARK_ORANGE, ORANGE, YELLOW, 
-            MAGENTA, PINK, LIGHT_PINK, WHITE} ;
+enum colors {BLACK, WHITE} ;
 
 // Augmentations
 void drawCell(short x, short y, char color) ;

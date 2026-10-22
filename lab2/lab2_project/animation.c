@@ -112,9 +112,9 @@ const uint32_t transfer_count = sine_table_size ;
 
 // the color of the pegs
 char color = WHITE ;
-const char ball_color = GREEN ;
-const char TEXT_COLOR = GREEN ;
-const char HIST_COLOR = GREEN ;
+const char ball_color = WHITE ;
+const char TEXT_COLOR = WHITE ;
+const char HIST_COLOR = WHITE ;
 
 // Boid on core 0
 fix15 boid0_x ;
@@ -131,8 +131,8 @@ typedef struct {
 } Boid;
 
 // Array of the boid
-static Boid boids1[6250];
-static Boid boids2[6250];
+static Boid boids1[12500];
+static Boid boids2[12500];
 
 // array for the histogram bins
 volatile int bins[15]; // only 15 gaps between pegs for a row of 16 pegs
@@ -164,7 +164,7 @@ const fix15 ALPHA = 1;
 const fix15 BETA = 1;
 
 // Global counters
-volatile long int active_balls = 12500;
+volatile long int active_balls = 14100;
 volatile long int prev_act_balls = 0;
 volatile long int total_balls = 0;
 volatile fix15 BOUNCINESS = float2fix15(0.495);
@@ -535,6 +535,22 @@ static PT_THREAD (protothread_anim(struct pt *pt))
       for (int i = 0; i < (prev_act_balls * 0.5); i++){
            drawCircleCustom(fix2int15(boids1[i].boid_x), fix2int15(boids1[i].boid_y), ball_color) ;
       }
+      for(int i = 0; i < 15; i++){
+        //sprintf(bins_buff[i], "%d", bins[i]);
+        //drawTextTiny8(54 +  (i * 38), 360, bins_buff[i], GREEN, BLACK);
+        //fillRect(35 + (i * 38), 480, 36, (bins[i]*100)/bins_max, GREEN);
+        //drawTextTiny8(fix2int15(hor_center) - (14 * fix2int15(half_hor_sep)) + (i * fix2int15(hor_sep)), 360, bins_buff[i], TEXT_COLOR, BLACK);
+        // 35 = hor_center - (15 * half_hor_sep)
+        drawRect((fix2int15(hor_center) - (15 * fix2int15(half_hor_sep)) + (i * fix2int15(hor_sep))), 480, fix2int15(hor_sep) - 2, (bins[i]*100)/bins_max, HIST_COLOR);
+        //printf("bins[%d] height: %d\n", i, (bins[i]*100)/bins_max);
+
+      }
+
+      sprintf(buffer0, "Counter of animated balls: %05d", active_balls);
+      drawTextTiny8(0, 30, buffer0, TEXT_COLOR, BLACK) ;
+
+      sprintf(buffer1, "Counter of fallen balls: %d", total_balls);
+      drawTextTiny8(0, 40, buffer1, TEXT_COLOR, BLACK) ;
       
       frame_number++;
       end_time = time_us_32();
@@ -606,17 +622,12 @@ static PT_THREAD (protothread_anim1(struct pt *pt))
 
         // Loop to spawn pegs in each row
         for (int j = 0; j <= i; j++) {
-          fillCircle(fix2int15(x_pos), fix2int15(y_pos), fix2int15(PEG_RAD), color); 
+          drawCircle(fix2int15(x_pos), fix2int15(y_pos), fix2int15(PEG_RAD), color); 
           x_pos += hor_sep;
         }
         y_pos += ver_sep;
       }
 
-      sprintf(buffer0, "Counter of animated balls: %05d", active_balls);
-      drawTextTiny8(0, 30, buffer0, TEXT_COLOR, BLACK) ;
-
-      sprintf(buffer1, "Counter of fallen balls: %d", total_balls);
-      drawTextTiny8(0, 40, buffer1, TEXT_COLOR, BLACK) ;
 
       sprintf(video_buffer, "Time: %4.1f ms", (float)(PT_GET_TIME_usec()-draw_time)/1000);
       drawTextTiny8(0, 50, video_buffer, TEXT_COLOR, BLACK) ;
@@ -624,17 +635,6 @@ static PT_THREAD (protothread_anim1(struct pt *pt))
       sprintf(buffer2, "BOUNCINESS: %1.3f", fix2float15(BOUNCINESS));
       drawTextTiny8(0, 60, buffer2, TEXT_COLOR, BLACK) ;
 
-
-      for(int i = 0; i < 15; i++){
-        sprintf(bins_buff[i], "%d", bins[i]);
-        //drawTextTiny8(54 +  (i * 38), 360, bins_buff[i], GREEN, BLACK);
-        //fillRect(35 + (i * 38), 480, 36, (bins[i]*100)/bins_max, GREEN);
-        drawTextTiny8(fix2int15(hor_center) - (14 * fix2int15(half_hor_sep)) + (i * fix2int15(hor_sep)), 360, bins_buff[i], TEXT_COLOR, BLACK);
-        // 35 = hor_center - (15 * half_hor_sep)
-        drawRect((fix2int15(hor_center) - (15 * fix2int15(half_hor_sep)) + (i * fix2int15(hor_sep))), 480, fix2int15(hor_sep) - 2, (bins[i]*100)/bins_max, HIST_COLOR);
-        //printf("bins[%d] height: %d\n", i, (bins[i]*100)/bins_max);
-
-      }
     
 
       for (int i = 0; i < (prev_act_balls * 0.5); i++){
@@ -780,7 +780,7 @@ int main(){
   
 
   //initialize all boid values
-  for (int i = 0; i < 6250; i++) { // hard coded array length
+  for (int i = 0; i < 12500; i++) { // hard coded array length
     boids1[i].boid_x = int2fix15(320);
     boids1[i].boid_y = int2fix15(25);
     // 0000_0000_0111_1111

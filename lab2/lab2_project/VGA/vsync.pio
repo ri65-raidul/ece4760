@@ -4,6 +4,7 @@
 
 ; Program name
 .program vsync
+.pio_version 1
 .side_set 1 opt
 
 ; frontporch: 10  lines
@@ -22,7 +23,7 @@ pull block                        ; Pull from FIFO to OSR (only once)
 mov x, osr                        ; Copy value from OSR to x scratch register
 activefront:
     wait 1 irq 0                  ; Wait for hsync to go high
-    irq 1                         ; Signal that we're in active mode
+    irq next 1                         ; Signal that we're in active mode
     jmp x-- activefront           ; Remain in active mode, decrementing counter
 
 ; FRONTPORCH

@@ -69,7 +69,7 @@ DrawPixel is faster
 // VGA timing constants
 #define H_ACTIVE   655    // (active + frontporch - 1) - one cycle delay for mov
 #define V_ACTIVE   479    // (active - 1)
-#define RGB_ACTIVE 319    // (horizontal active)/2 - 1
+#define RGB_ACTIVE 639    // (horizontal active) - 1
 // #define RGB_ACTIVE 639 // change to this if 1 pixel/byte
 
 // Length of the pixel array, and number of DMA transfers
@@ -443,22 +443,23 @@ void drawHLine(int x, int y, int w, char color) {
     return ;
   }
   //
-  short both_color = color | (color<<4) ;
-  // loner pixel at x -- align left with next byte boundary
-  if((x & 1)) {
+  // 1 bit/pixel: a full byte is 8 pixels of the same color
+  char both_color = color ? 0xFF : 0x00 ;
+  // loner pixels at x -- align left with next byte boundary
+  while((x & 7) && (w > 0)) {
     drawPixel(x,y,color);
     x++ ;
     w-- ;
   }
-  // draw loner pixel at end and adjust width
-  if((w & 1)){
+  // draw loner pixels at end and adjust width
+  while((w & 7)){
     drawPixel(x+w-1, y, color);
     w-- ;
   }
   // draw rest of line
   int len = (w>>3)  ;
   if (len>0  )  //&& len+x < 640 && y<480
-    memset(current_draw_buffer+(320*y+(x>>3)), both_color, len) ;
+    memset(current_draw_buffer+(80*y+(x>>3)), both_color, len) ;
 }
 
 // general line drawing
@@ -1192,29 +1193,23 @@ int drawTextAscii(short x, short y, char * str, char color, char bgcolor){
 int drawTextTiny8(short x, short y, char * str, char color, char bgcolor){
   // get string start
   int char_count = 0 ;
-  char * draw_loc = (current_draw_buffer + ((640 * y + x) >> 1)) ;
   // error check
   if(x<0 | y<0 | y>470) return 0;
-  // set up the possible values for any byte
-  char pix_value[4] = 
-    {(bgcolor<<4 | bgcolor), (color<<4 | bgcolor), (bgcolor<<4 | color), (color<<4 | color)};
   // holds a line of the char bit map
-  unsigned char line; 
+  unsigned char line;
   while (*str){
     if((x+8 > 639)) return char_count ;
     // subtract 32 because first file wentry is <space>
-    char c = (*str++) - 32 ;    
+    char c = (*str++) - 32 ;
     char_count++ ;
-    for (int i=0; i<8; i++ ) {   
+    for (int i=0; i<8; i++ ) {
       line = pgm_read_byte(TinyFont+((int)c*8)+i);
-      // each two pixels is one byte, so write 4 bytes
-      // using the value of 'line' to index into the pixel table//
-        *(draw_loc+i*320) =   pix_value[(line>>6) & 0x03] ;
-        *(draw_loc+i*320+1) = pix_value[(line>>4) & 0x03] ; //draw_loc+i*320
-        *(draw_loc+i*320+2) = pix_value[(line>>2) & 0x03] ;
-        *(draw_loc+i*320+3) = pix_value[(line) & 0x03] ;     
+      // 1 bit/pixel: draw the 8 pixels of this row one at a time
+      // bit 7 of 'line' is the leftmost pixel
+      for (int j=0; j<8; j++) {
+        drawPixel(x+j, y+i, (line & (0x80 >> j)) ? color : bgcolor) ;
+      }
     }
-    draw_loc += 4 ;
     x += 8 ;
   }
   return char_count ;
