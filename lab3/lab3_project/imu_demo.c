@@ -58,7 +58,7 @@
 
 // Place the plots
 #define TOP_PLOT_BOTTOM 150
-#define BOTTOM_PLOT_BOTTOM 275
+#define BOTTOM_PLOT_BOTTOM 325
 #define ANGLE_PLOT_BOTTOM 440
 #define PLOT_WIDTH 530
 #define PI 3.1416
@@ -226,7 +226,7 @@ void on_pwm_wrap() {
             control = 0;
         } else {
             int p_term = fix2int15(multfix15(KP,error));
-            control = (p_term > 6000) ? 5800 : p_term;
+            control = (p_term > 4000) ? 3800 : p_term;
         }
         count = 0;
     } 
@@ -307,7 +307,7 @@ static PT_THREAD (protothread_draw(struct pt *pt))
 
             // draft thing for pid output plot
             drawPixel(LEFT_EDGE + i, (BOTTOM_PLOT_BOTTOM - 
-                (int)(NEW_RANGE*((float)(((pid_output[start]))-OLD_MIN)/OLD_RANGE))), WHITE) ;
+                (int)(NEW_RANGE*((float)(((pid_output[start])*0.05)-OLD_MIN)/OLD_RANGE))), WHITE) ;
 
             start = ((start+1)==PLOT_WIDTH) ? 0 : (start+1) ;
         }
