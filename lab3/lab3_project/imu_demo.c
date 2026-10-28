@@ -53,10 +53,13 @@
 #define OLD_MIN -250. 
 #define OLD_MAX 250. 
 #define ACCEL_SCALE 120.0
+#define ANGLE_SCALE 1.8
+
 
 // Place the plots
 #define TOP_PLOT_BOTTOM 150
 #define BOTTOM_PLOT_BOTTOM 275
+#define ANGLE_PLOT_BOTTOM 440
 #define PLOT_WIDTH 530
 #define PI 3.1416
 
@@ -70,12 +73,14 @@ fix15 az[PLOT_WIDTH] ;
 fix15 gx[PLOT_WIDTH] ;
 fix15 gy[PLOT_WIDTH] ;
 fix15 gz[PLOT_WIDTH] ;
+fix15 comp_angle_array[PLOT_WIDTH];
+int pid_output[PLOT_WIDTH];
 
 // Pointer to head of buffer
 volatile int head = 0 ;
 
 // PWM duty cycle
-volatile int control ;
+volatile int control = 100;
 volatile int old_control ;
 
 // character array
@@ -101,6 +106,16 @@ static struct pt_sem vga_semaphore ;
 
 uint slice_num ;
 
+volatile fix15 accel_angle = 0;
+volatile fix15 gyro_angle_delta = 0;
+volatile fix15 complementary_angle = 0;
+volatile fix15 error = 0;
+volatile fix15 desired_angle = int2fix15(60);
+volatile fix15 KP = float2fix15(0.1);
+volatile int count = 0;
+
+char angle_buffer[64];
+
 
 void drawAxes() {
     // Draw the static aspects of the display
@@ -112,61 +127,61 @@ void drawAxes() {
     drawHLine(75, 200, 5, CYAN) ;
     drawHLine(75, 250, 5, CYAN) ;
     drawVLine(80, 150, 100, CYAN) ;
-    sprintf(screentext, "0") ;
+    sprintf(screentext, "3000") ;
     setCursor(50, 200) ;
     writeString(screentext) ;
-    sprintf(screentext, "+2") ;
+    sprintf(screentext, "6000") ;
     setCursor(50, 150) ;
     writeString(screentext) ;
-    sprintf(screentext, "-2") ;
+    sprintf(screentext, "0") ;
     setCursor(50, 250) ;
     writeString(screentext) ;
-    sprintf(screentext, "accel") ;
+    sprintf(screentext, "pid") ;
     setCursor(10, 200) ;
     writeString(screentext) ;
 
-    // Draw top plot
-    drawHLine(75, 25, 5, CYAN) ;
-    drawHLine(75, 125, 5, CYAN) ;
-    drawHLine(75, 75, 5, CYAN) ;
-    drawVLine(80, 25, 100, CYAN) ;
-    sprintf(screentext, "0") ;
-    setCursor(50, 75) ;
-    writeString(screentext) ;
-    sprintf(screentext, "+250") ;
-    setCursor(45, 25) ;
-    writeString(screentext) ;
-    sprintf(screentext, "-250") ;
-    setCursor(45, 125) ;
-    writeString(screentext) ;
-    sprintf(screentext, "gyro") ;
-    setCursor(10, 75) ;
-    writeString(screentext) ;
+    // // Draw top plot
+    // drawHLine(75, 25, 5, CYAN) ;
+    // drawHLine(75, 125, 5, CYAN) ;
+    // drawHLine(75, 75, 5, CYAN) ;
+    // drawVLine(80, 25, 100, CYAN) ;
+    // sprintf(screentext, "3000") ;
+    // setCursor(50, 75) ;
+    // writeString(screentext) ;
+    // sprintf(screentext, "6000") ;
+    // setCursor(45, 25) ;
+    // writeString(screentext) ;
+    // sprintf(screentext, "0") ;
+    // setCursor(45, 125) ;
+    // writeString(screentext) ;
+    // sprintf(screentext, "pid") ;
+    // setCursor(10, 75) ;
+    // writeString(screentext) ;
 
     // Draw angle plot
     drawHLine(75, 275, 5, CYAN) ;
     drawHLine(75, 325, 5, CYAN) ;
     drawHLine(75, 375, 5, CYAN) ;
     drawVLine(80, 275, 100, CYAN) ;
-    sprintf(screentext, "0") ;
+    sprintf(screentext, "90") ;
     setCursor(50, 325) ;
     writeString(screentext) ;
-    sprintf(screentext, "+90") ;
+    sprintf(screentext, "180") ;
     setCursor(45, 275) ;
     writeString(screentext) ;
-    sprintf(screentext, "-90") ;
+    sprintf(screentext, "0") ;
     setCursor(45, 375) ;
     writeString(screentext) ;
     sprintf(screentext, "angle") ;
     setCursor(10, 325) ;
     writeString(screentext) ;
 
+    // // Write complementary angle
+    // sprintf(angle_buffer, "Complementary Angle: %4.1f", complementary_angle);
+    // drawTextVGA437(260, 450, angle_buffer, WHITE, BLACK) ;
 }
 
 volatile int throttle = 10 ;
-volatile fix15 accel_angle = 0;
-volatile fix15 gyro_angle_data = 0;
-volatile fix15 complementary_angle = 0;
 
 // Interrupt service routine
 void on_pwm_wrap() {
@@ -187,14 +202,35 @@ void on_pwm_wrap() {
     // the raw measurements.
     mpu6050_read_raw(acceleration, gyro);
 
+    // Low pass the accelerometer
+    int filtered_ax;
+    int filtered_az;
+    filtered_ax = filtered_ax + ((acceleration[0] - filtered_ax));
+    filtered_az = filtered_az + ((acceleration[2] - filtered_az)); // This 6 is tunable
+
     // Accelerometer angle
-    accel_angle = multfix15(float2fix15(atan2(acceleration[0], acceleration[1]) + PI), oneeightyoverpi);
+    accel_angle = multfix15(float2fix15(atan2(filtered_az, filtered_ax)), oneeightyoverpi);
 
     // Gyro angle delta
-    gyro_angle_data = multfix15(gyro[2], zeropt001);
+    gyro_angle_delta = multfix15(gyro[1], zeropt001);
 
     // Complementary angle calc
-    complementary_angle = multfix15(complementary_angle - gyro_angle_data, zeropt999) + multfix15(accel_angle, zeropt001);
+    complementary_angle = multfix15(complementary_angle + gyro_angle_delta, zeropt999) + multfix15(accel_angle, zeropt001);
+
+    // Calculate the error
+    error = desired_angle - complementary_angle;
+
+    if (count == 20) {
+        // Proportional Control
+        if (error <= 0) {
+            control = 0;
+        } else {
+            int p_term = fix2int15(multfix15(KP,error));
+            control = (p_term > 6000) ? 5800 : p_term;
+        }
+        count = 0;
+    } 
+    count++;
 
     // Increment drawspeed controller
     throttle += 1 ;
@@ -213,12 +249,20 @@ void on_pwm_wrap() {
         gy[head] = gyro[1] ;
         gz[head] = gyro[2] ;
 
+        // Replace oldest data in angle arrays with new sample
+        comp_angle_array[head] = complementary_angle;
+        pid_output[head] = control;
+
         // Move the pointer to the oldest data
         head = ((head+1) == PLOT_WIDTH) ? 0 : (head + 1) ;
 
     }
 }
 
+char comp_angle_buffer[64];
+char error_buffer[64];
+char control_buffer[64];
+char kp_buffer[64];
 static PT_THREAD (protothread_draw(struct pt *pt))
 {
     PT_BEGIN(pt) ;
@@ -243,21 +287,43 @@ static PT_THREAD (protothread_draw(struct pt *pt))
         // Plot data oldest-->newest
         start = head ;
         for (i = 0; i < PLOT_WIDTH; i++) {
-            drawPixel(LEFT_EDGE + i, (BOTTOM_PLOT_BOTTOM -
-                (int)(NEW_RANGE*((float)((fix2float15(ax[start])*ACCEL_SCALE)-OLD_MIN)/OLD_RANGE))), WHITE) ;
-            drawPixel(LEFT_EDGE + i, (BOTTOM_PLOT_BOTTOM -
-                (int)(NEW_RANGE*((float)((fix2float15(ay[start])*ACCEL_SCALE)-OLD_MIN)/OLD_RANGE))), RED) ;
-            drawPixel(LEFT_EDGE + i, (BOTTOM_PLOT_BOTTOM -
-                (int)(NEW_RANGE*((float)((fix2float15(az[start])*ACCEL_SCALE)-OLD_MIN)/OLD_RANGE))), GREEN) ;
-            drawPixel(LEFT_EDGE + i, (TOP_PLOT_BOTTOM -
-                (int)(NEW_RANGE*((float)((fix2float15(gx[start]))-OLD_MIN)/OLD_RANGE))), WHITE) ;
-            drawPixel(LEFT_EDGE + i, (TOP_PLOT_BOTTOM -
-                (int)(NEW_RANGE*((float)((fix2float15(gy[start]))-OLD_MIN)/OLD_RANGE))), RED) ;
-            drawPixel(LEFT_EDGE + i, (TOP_PLOT_BOTTOM -
-                (int)(NEW_RANGE*((float)((fix2float15(gz[start]))-OLD_MIN)/OLD_RANGE))), GREEN) ;
+            // drawPixel(LEFT_EDGE + i, (BOTTOM_PLOT_BOTTOM -
+            //     (int)(NEW_RANGE*((float)((fix2float15(ax[start])*ACCEL_SCALE)-OLD_MIN)/OLD_RANGE))), WHITE) ;
+            // drawPixel(LEFT_EDGE + i, (BOTTOM_PLOT_BOTTOM -
+            //     (int)(NEW_RANGE*((float)((fix2float15(ay[start])*ACCEL_SCALE)-OLD_MIN)/OLD_RANGE))), RED) ;
+            // drawPixel(LEFT_EDGE + i, (BOTTOM_PLOT_BOTTOM -
+            //     (int)(NEW_RANGE*((float)((fix2float15(az[start])*ACCEL_SCALE)-OLD_MIN)/OLD_RANGE))), GREEN) ;
+            // drawPixel(LEFT_EDGE + i, (TOP_PLOT_BOTTOM -
+            //     (int)(NEW_RANGE*((float)((fix2float15(gx[start]))-OLD_MIN)/OLD_RANGE))), WHITE) ;
+            // drawPixel(LEFT_EDGE + i, (TOP_PLOT_BOTTOM -
+            //     (int)(NEW_RANGE*((float)((fix2float15(gy[start]))-OLD_MIN)/OLD_RANGE))), RED) ;
+            // drawPixel(LEFT_EDGE + i, (TOP_PLOT_BOTTOM -
+            //     (int)(NEW_RANGE*((float)((fix2float15(gz[start]))-OLD_MIN)/OLD_RANGE))), GREEN) ;
+
+
+            // draft thing for angle plot
+            drawPixel(LEFT_EDGE + i, (ANGLE_PLOT_BOTTOM - 
+                (int)(NEW_RANGE*((float)((fix2float15(comp_angle_array[start])*ANGLE_SCALE)-OLD_MIN)/OLD_RANGE))), WHITE) ;
+
+            // draft thing for pid output plot
+            drawPixel(LEFT_EDGE + i, (BOTTOM_PLOT_BOTTOM - 
+                (int)(NEW_RANGE*((float)(((pid_output[start]))-OLD_MIN)/OLD_RANGE))), WHITE) ;
+
             start = ((start+1)==PLOT_WIDTH) ? 0 : (start+1) ;
         }
-        printf("Complementary Angle: %d", fix2int15(complementary_angle));
+        // printf("Complementary Angle: %d\n", fix2int15(complementary_angle));
+        // printf("Error: %d\n", fix2int15(error));
+        // printf("Control: %d\n", control);
+
+        sprintf(comp_angle_buffer, "Comp angle: %4.1f", fix2float15(complementary_angle));
+        drawTextVGA437(10, 450, comp_angle_buffer, WHITE, BLACK) ;
+        sprintf(error_buffer, "Error: %4.1f", fix2float15(error));
+        drawTextVGA437(150, 450, error_buffer, WHITE, BLACK) ;
+        sprintf(control_buffer, "Control: %d", control);
+        drawTextVGA437(290, 450, control_buffer, WHITE, BLACK) ;
+        sprintf(kp_buffer, "KP: %4.1f", fix2float15(KP));
+        drawTextVGA437(410, 450, kp_buffer, WHITE, BLACK) ;
+        
     }
 
     PT_END(pt) ;
@@ -297,24 +363,25 @@ static PT_THREAD (protothread_serial(struct pt *pt))
 static PT_THREAD (protothread_serial_motor(struct pt *pt))
 {
     PT_BEGIN(pt) ;
-    static int test_in ;
+    static float test_in ;
     while(1) {
-        sprintf(pt_serial_out_buffer, "input a duty cycle (0-6000): ");
+        sprintf(pt_serial_out_buffer, "input a KP (0-6000): ");
         serial_write ;
         // spawn a thread to do the non-blocking serial read
         serial_read ;
         // convert input string to number
-        sscanf(pt_serial_in_buffer,"%d", &test_in) ;
-        if (test_in > 6000) continue ;
-        else if (test_in < 0) continue ;
-        else control = test_in ;
-
+        sscanf(pt_serial_in_buffer,"%f", &test_in) ;
+        //if (test_in > 6000) continue ;
+        //else if (test_in < 0) continue ;
+        //else KP = float2fix15(test_in) ;
+        KP = float2fix15(test_in) ;
     }
     PT_END(pt) ;
 }
 
 // Entry point for core 1
 void core1_entry() {
+    printf("Debug-core1\n");
     gpio_init(15) ;
     gpio_set_dir(15, GPIO_OUT) ;
     gpio_put(15, 0) ;
@@ -366,7 +433,7 @@ int main() {
 
     // This sets duty cycle
     //pwm_set_chan_level(slice_num, PWM_CHAN_B, 0);
-    pwm_set_chan_level(slice_num, PWM_CHAN_A, 3000);
+    pwm_set_chan_level(slice_num, PWM_CHAN_A, 0);
 
     // Start the channel
     pwm_set_mask_enabled((1u << slice_num));
@@ -385,6 +452,7 @@ int main() {
     gpio_put(14, 0) ;
 
     //pt_add_thread(protothread_serial) ;
+    // printf("Debug-core0\n");
     pt_add_thread(protothread_serial_motor) ;
     pt_schedule_start ;
 
