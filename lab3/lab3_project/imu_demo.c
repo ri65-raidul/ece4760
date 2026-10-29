@@ -74,14 +74,17 @@ fix15 gx[PLOT_WIDTH] ;
 fix15 gy[PLOT_WIDTH] ;
 fix15 gz[PLOT_WIDTH] ;
 fix15 comp_angle_array[PLOT_WIDTH];
-int pid_output[PLOT_WIDTH];
+int pwm_output_array[PLOT_WIDTH];
+int d_term_array[PLOT_WIDTH];
+int p_term_array[PLOT_WIDTH];
+int i_term_array[PLOT_WIDTH];
 
 // Pointer to head of buffer
 volatile int head = 0 ;
 
 // PWM duty cycle
-volatile int control = 100;
-volatile int old_control ;
+volatile int control = 10;
+volatile int old_control = 10;
 
 // character array
 char screentext[40];
@@ -110,9 +113,16 @@ volatile fix15 accel_angle = 0;
 volatile fix15 gyro_angle_delta = 0;
 volatile fix15 complementary_angle = 0;
 volatile fix15 error = 0;
-volatile fix15 desired_angle = int2fix15(60);
-volatile fix15 KP = float2fix15(0.1);
+volatile fix15 desired_angle = int2fix15(90);
 volatile int count = 0;
+volatile fix15 old_error = 0;
+volatile fix15 sum_error = 0;
+volatile fix15 old_i_mul = 0;
+volatile fix15 i_mul = 0;
+
+volatile fix15 KP = float2fix15(20);
+volatile fix15 KD = float2fix15(50);
+volatile fix15 KI = float2fix15(6);
 
 char angle_buffer[64];
 
@@ -136,7 +146,7 @@ void drawAxes() {
     sprintf(screentext, "0") ;
     setCursor(50, 250) ;
     writeString(screentext) ;
-    sprintf(screentext, "pid") ;
+    sprintf(screentext, "PWM") ;
     setCursor(10, 200) ;
     writeString(screentext) ;
 
@@ -182,6 +192,10 @@ void drawAxes() {
 }
 
 volatile int throttle = 10 ;
+volatile fix15 d_term = 0;
+volatile fix15 p_term = 0;
+volatile fix15 i_term = 0;
+volatile int pid_term = 0;
 
 // Interrupt service routine
 void on_pwm_wrap() {
@@ -196,6 +210,10 @@ void on_pwm_wrap() {
     }
     //pwm_set_chan_level(slice_num, PWM_CHAN_A, 600);
 
+    if (old_error != error) {
+        old_error = error;
+    }
+
     // Read the IMU
     // NOTE! This is in 15.16 fixed point. Accel in g's, gyro in deg/s
     // If you want these values in floating point, call fix2float15() on
@@ -205,8 +223,8 @@ void on_pwm_wrap() {
     // Low pass the accelerometer
     int filtered_ax;
     int filtered_az;
-    filtered_ax = filtered_ax + ((acceleration[0] - filtered_ax));
-    filtered_az = filtered_az + ((acceleration[2] - filtered_az)); // This 6 is tunable
+    filtered_ax = filtered_ax + ((acceleration[0] - filtered_ax) >> 6);
+    filtered_az = filtered_az + ((acceleration[2] - filtered_az) >> 6); // This 6 is tunable
 
     // Accelerometer angle
     accel_angle = multfix15(float2fix15(atan2(filtered_az, filtered_ax)), oneeightyoverpi);
@@ -220,17 +238,26 @@ void on_pwm_wrap() {
     // Calculate the error
     error = desired_angle - complementary_angle;
 
-    if (count == 20) {
+    // Add the error
+    i_mul = multfix15(error, zeropt001);
+    if (i_mul != old_i_mul){
+        sum_error = sum_error + i_mul;
+        old_i_mul = i_mul;
+    }
+
+    // Multiplying each term with their coefficients
+    i_term = multfix15(KI, sum_error);
+    d_term = multfix15(KD, gyro[1]);
+    p_term = multfix15(KP, error);
+
+    if (count == 1) {
         // Proportional Control
-        if (error <= 0) {
-            control = 0;
-        } else {
-            int p_term = fix2int15(multfix15(KP,error));
-            control = (p_term > 4000) ? 3800 : p_term;
-        }
+        pid_term = fix2int15(p_term - d_term + i_term);
+        control = (pid_term > 4000) ? 3500 : pid_term;
         count = 0;
     } 
     count++;
+
 
     // Increment drawspeed controller
     throttle += 1 ;
@@ -251,7 +278,10 @@ void on_pwm_wrap() {
 
         // Replace oldest data in angle arrays with new sample
         comp_angle_array[head] = complementary_angle;
-        pid_output[head] = control;
+        pwm_output_array[head] = control;
+        p_term_array[head] = fix2int15(p_term);
+        d_term_array[head] = fix2int15(d_term);
+        i_term_array[head] = fix2int15(i_term);
 
         // Move the pointer to the oldest data
         head = ((head+1) == PLOT_WIDTH) ? 0 : (head + 1) ;
@@ -263,6 +293,10 @@ char comp_angle_buffer[64];
 char error_buffer[64];
 char control_buffer[64];
 char kp_buffer[64];
+char kd_buffer[64];
+char ki_buffer[64];
+char delta_error_buffer[64];
+char pid_buffer[64];
 static PT_THREAD (protothread_draw(struct pt *pt))
 {
     PT_BEGIN(pt) ;
@@ -306,8 +340,15 @@ static PT_THREAD (protothread_draw(struct pt *pt))
                 (int)(NEW_RANGE*((float)((fix2float15(comp_angle_array[start])*ANGLE_SCALE)-OLD_MIN)/OLD_RANGE))), WHITE) ;
 
             // draft thing for pid output plot
+            
             drawPixel(LEFT_EDGE + i, (BOTTOM_PLOT_BOTTOM - 
-                (int)(NEW_RANGE*((float)(((pid_output[start])*0.05)-OLD_MIN)/OLD_RANGE))), WHITE) ;
+                (int)(NEW_RANGE*((float)(((p_term_array[start])*0.05)-OLD_MIN)/OLD_RANGE))), GREEN) ;
+            drawPixel(LEFT_EDGE + i, (BOTTOM_PLOT_BOTTOM - 
+                (int)(NEW_RANGE*((float)(((d_term_array[start]))-OLD_MIN)/OLD_RANGE))), RED) ;
+            drawPixel(LEFT_EDGE + i, (BOTTOM_PLOT_BOTTOM - 
+                (int)(NEW_RANGE*((float)(((pwm_output_array[start])*0.05)-OLD_MIN)/OLD_RANGE))), WHITE) ;
+            drawPixel(LEFT_EDGE + i, (BOTTOM_PLOT_BOTTOM - 
+                (int)(NEW_RANGE*((float)(((i_term_array[start])*0.05)-OLD_MIN)/OLD_RANGE))), PINK) ;
 
             start = ((start+1)==PLOT_WIDTH) ? 0 : (start+1) ;
         }
@@ -323,6 +364,14 @@ static PT_THREAD (protothread_draw(struct pt *pt))
         drawTextVGA437(290, 450, control_buffer, WHITE, BLACK) ;
         sprintf(kp_buffer, "KP: %4.1f", fix2float15(KP));
         drawTextVGA437(410, 450, kp_buffer, WHITE, BLACK) ;
+        sprintf(kd_buffer, "KD: %4.1f", fix2float15(KD));
+        drawTextVGA437(410, 400, ki_buffer, WHITE, BLACK) ;
+        sprintf(ki_buffer, "KI: %4.1f", fix2float15(KI));
+        drawTextVGA437(510, 450, kd_buffer, WHITE, BLACK) ;
+        sprintf(delta_error_buffer, "Delta Error: %4.1f", fix2float15(error - old_error));
+        drawTextVGA437(600, 450, delta_error_buffer, WHITE, BLACK) ;
+        sprintf(pid_buffer, "PID Term: %d", pid_term);
+        drawTextVGA437(290, 400, pid_buffer, WHITE, BLACK) ;
         
     }
 
@@ -365,7 +414,7 @@ static PT_THREAD (protothread_serial_motor(struct pt *pt))
     PT_BEGIN(pt) ;
     static float test_in ;
     while(1) {
-        sprintf(pt_serial_out_buffer, "input a KP (0-6000): ");
+        sprintf(pt_serial_out_buffer, "input a KI: ");
         serial_write ;
         // spawn a thread to do the non-blocking serial read
         serial_read ;
@@ -374,7 +423,7 @@ static PT_THREAD (protothread_serial_motor(struct pt *pt))
         //if (test_in > 6000) continue ;
         //else if (test_in < 0) continue ;
         //else KP = float2fix15(test_in) ;
-        KP = float2fix15(test_in) ;
+        KI = float2fix15(test_in) ;
     }
     PT_END(pt) ;
 }
