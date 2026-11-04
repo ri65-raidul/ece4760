@@ -48,6 +48,7 @@ target_link_libraries(  MPU6050_IMU
                         hardware_pio
                         hardware_sync
                         hardware_i2c
+                        hardware_gpio
                         hardware_clocks)
 
 # create map/bin/hex file etc.

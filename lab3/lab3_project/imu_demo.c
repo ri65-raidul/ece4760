@@ -37,12 +37,15 @@
 #include "hardware/adc.h"
 #include "hardware/pio.h"
 #include "hardware/i2c.h"
+#include "hardware/gpio.h"
 #include "hardware/clocks.h"
 #include "hardware/sync.h"
 // Include custom libraries
 #include "VGA/vga16_graphics_v3.h"
 #include "mpu6050.h"
 #include "pt_cornell_rp2040_v1_4.h"
+
+//#define ISR_GPIO 2
 
 // We will start drawing at column 81
 #define LEFT_EDGE 81 
@@ -120,9 +123,9 @@ volatile fix15 sum_error = 0;
 volatile fix15 old_i_mul = 0;
 volatile fix15 i_mul = 0;
 
-volatile fix15 KP = float2fix15(20);
-volatile fix15 KD = float2fix15(50);
-volatile fix15 KI = float2fix15(6);
+volatile fix15 KP = float2fix15(90);
+volatile fix15 KD = float2fix15(30);
+volatile fix15 KI = float2fix15(16);
 
 char angle_buffer[64];
 
@@ -197,6 +200,32 @@ volatile fix15 p_term = 0;
 volatile fix15 i_term = 0;
 volatile int pid_term = 0;
 
+volatile int start_time = 0;
+volatile int mode = 0;
+volatile int time = 0;
+
+// GPIO interrupt
+void gpio_callback(uint gpio, uint32_t event_mask) {
+    
+    // if(gpio == 11 && event_mask == GPIO_IRQ_EDGE_FALL) {
+    //     gpio_put(25, !gpio_get(25));
+    //     printf("enters isr \n");
+    // }
+    gpio_put(25, !gpio_get(25));
+    mode = 1;
+    desired_angle = 0;
+    
+    // desired_angle = int2fix15(90);
+    // // wait 5 seconds
+    // desired_angle = int2fix15(120);
+    // // wait 5 seconds
+    // desired_angle = int2fix15(90);
+    // // wait 5 seconds
+    // desired_angle = int2fix15(60);
+    // // wait 5 seconds
+    // desired_angle = int2fix15(90);
+}
+
 // Interrupt service routine
 void on_pwm_wrap() {
 
@@ -223,10 +252,12 @@ void on_pwm_wrap() {
     // Low pass the accelerometer
     int filtered_ax;
     int filtered_az;
-    filtered_ax = filtered_ax + ((acceleration[0] - filtered_ax) >> 6);
-    filtered_az = filtered_az + ((acceleration[2] - filtered_az) >> 6); // This 6 is tunable
-
-    // Accelerometer angle
+    filtered_ax = filtered_ax + ((acceleration[0] - filtered_ax) >> 2);
+    filtered_az = filtered_az + ((acceleration[2] - filtered_az) >> 2); // This 6 is tunable
+    
+    if (filtered_az < int2fix15(0) && desired_angle > int2fix15(90)){
+        filtered_az = multfix15(int2fix15(-1), filtered_az);
+    }
     accel_angle = multfix15(float2fix15(atan2(filtered_az, filtered_ax)), oneeightyoverpi);
 
     // Gyro angle delta
@@ -235,8 +266,10 @@ void on_pwm_wrap() {
     // Complementary angle calc
     complementary_angle = multfix15(complementary_angle + gyro_angle_delta, zeropt999) + multfix15(accel_angle, zeropt001);
 
+    //complementary_angle += int2fix15(15);
+
     // Calculate the error
-    error = desired_angle - complementary_angle;
+    error = desired_angle - complementary_angle - int2fix15(25);
 
     // Add the error
     i_mul = multfix15(error, zeropt001);
@@ -253,10 +286,26 @@ void on_pwm_wrap() {
     if (count == 1) {
         // Proportional Control
         pid_term = fix2int15(p_term - d_term + i_term);
-        control = (pid_term > 4000) ? 3500 : pid_term;
+        control = (pid_term > 3700) ? 3500 : pid_term;
+        control = (control < 0) ? 0 : control;
         count = 0;
     } 
     count++;
+
+    if (mode) {
+        if (time == 0){
+            desired_angle = int2fix15(90);
+        } else if (time == 5000) {
+            desired_angle = int2fix15(120);
+        } else if (time == 10000) {
+            desired_angle = int2fix15(60);
+        } else if (time == 15000) {
+            desired_angle = int2fix15(90);
+            time = 0;
+            mode = 0;
+        }
+        time++;
+    }
 
 
     // Increment drawspeed controller
@@ -290,6 +339,7 @@ void on_pwm_wrap() {
 }
 
 char comp_angle_buffer[64];
+char des_angle_buffer[64];
 char error_buffer[64];
 char control_buffer[64];
 char kp_buffer[64];
@@ -344,7 +394,7 @@ static PT_THREAD (protothread_draw(struct pt *pt))
             drawPixel(LEFT_EDGE + i, (BOTTOM_PLOT_BOTTOM - 
                 (int)(NEW_RANGE*((float)(((p_term_array[start])*0.05)-OLD_MIN)/OLD_RANGE))), GREEN) ;
             drawPixel(LEFT_EDGE + i, (BOTTOM_PLOT_BOTTOM - 
-                (int)(NEW_RANGE*((float)(((d_term_array[start]))-OLD_MIN)/OLD_RANGE))), RED) ;
+                (int)(NEW_RANGE*((float)(((d_term_array[start])*0.05)-OLD_MIN)/OLD_RANGE))), RED) ;
             drawPixel(LEFT_EDGE + i, (BOTTOM_PLOT_BOTTOM - 
                 (int)(NEW_RANGE*((float)(((pwm_output_array[start])*0.05)-OLD_MIN)/OLD_RANGE))), WHITE) ;
             drawPixel(LEFT_EDGE + i, (BOTTOM_PLOT_BOTTOM - 
@@ -356,8 +406,10 @@ static PT_THREAD (protothread_draw(struct pt *pt))
         // printf("Error: %d\n", fix2int15(error));
         // printf("Control: %d\n", control);
 
-        sprintf(comp_angle_buffer, "Comp angle: %4.1f", fix2float15(complementary_angle));
+        sprintf(comp_angle_buffer, "Comp angle: %4.1f", (fix2float15(complementary_angle)+25));
         drawTextVGA437(10, 450, comp_angle_buffer, WHITE, BLACK) ;
+        sprintf(des_angle_buffer, "Desired angle: %4.1f", (fix2float15(desired_angle)));
+        drawTextVGA437(10, 400, des_angle_buffer, WHITE, BLACK) ;
         sprintf(error_buffer, "Error: %4.1f", fix2float15(error));
         drawTextVGA437(150, 450, error_buffer, WHITE, BLACK) ;
         sprintf(control_buffer, "Control: %d", control);
@@ -378,52 +430,63 @@ static PT_THREAD (protothread_draw(struct pt *pt))
     PT_END(pt) ;
 }
 
-// User input thread. User can change draw speed
-static PT_THREAD (protothread_serial(struct pt *pt))
-{
-    PT_BEGIN(pt) ;
-    static char classifier ;
-    static int test_in ;
-    static float float_in ;
-    while(1) {
-        sprintf(pt_serial_out_buffer, "input a command: ");
-        serial_write ;
-        // spawn a thread to do the non-blocking serial read
-        serial_read ;
-        // convert input string to number
-        sscanf(pt_serial_in_buffer,"%c", &classifier) ;
+// // User input thread. User can change draw speed
+// static PT_THREAD (protothread_serial(struct pt *pt))
+// {
+//     PT_BEGIN(pt) ;
+//     static char classifier ;
+//     static int test_in ;
+//     static float float_in ;
+//     while(1) {
+//         sprintf(pt_serial_out_buffer, "input a command: ");
+//         serial_write ;
+//         // spawn a thread to do the non-blocking serial read
+//         serial_read ;
+//         // convert input string to number
+//         sscanf(pt_serial_in_buffer,"%c", &classifier) ;
 
-        // num_independents = test_in ;
-        if (classifier=='t') {
-            sprintf(pt_serial_out_buffer, "timestep: ");
-            serial_write ;
-            serial_read ;
-            // convert input string to number
-            sscanf(pt_serial_in_buffer,"%d", &test_in) ;
-            if (test_in > 0) {
-                threshold = test_in ;
-            }
-        }
-    }
-    PT_END(pt) ;
-}
+//         // num_independents = test_in ;
+//         if (classifier=='t') {
+//             sprintf(pt_serial_out_buffer, "timestep: ");
+//             serial_write ;
+//             serial_read ;
+//             // convert input string to number
+//             sscanf(pt_serial_in_buffer,"%d", &test_in) ;
+//             if (test_in > 0) {
+//                 threshold = test_in ;
+//             }
+//         }
+//     }
+//     PT_END(pt) ;
+// }
 
 // User input thread
 static PT_THREAD (protothread_serial_motor(struct pt *pt))
 {
     PT_BEGIN(pt) ;
-    static float test_in ;
+    static int   test_in ;
+    static float   test_in1;
+    static int number;
     while(1) {
-        sprintf(pt_serial_out_buffer, "input a KI: ");
+        sprintf(pt_serial_out_buffer, "Enter the number for the desired parameter you want to change and put the desired value after: \n1 - desired beam angle\n2 - Kp\n3 - Kd\n4 - Ki\n");
         serial_write ;
         // spawn a thread to do the non-blocking serial read
         serial_read ;
         // convert input string to number
-        sscanf(pt_serial_in_buffer,"%f", &test_in) ;
-        //if (test_in > 6000) continue ;
-        //else if (test_in < 0) continue ;
-        //else KP = float2fix15(test_in) ;
-        KI = float2fix15(test_in) ;
+        sscanf(pt_serial_in_buffer,"%d, %f", &test_in, &test_in1) ;
+        number = test_in ;
+        if (number == 1) {
+            desired_angle = float2fix15(test_in1);
+        }
+        else if (number == 2) {
+            KP = float2fix15(test_in1);
+        }
+        else if (number == 3) {
+            KD = float2fix15(test_in1);
+        }
+        else if (number == 4) {
+            KI = float2fix15(test_in1);
+        }
     }
     PT_END(pt) ;
 }
@@ -448,6 +511,22 @@ int main() {
 
     // Initialize VGA
     initVGA() ;
+
+    gpio_init(11) ;
+    gpio_set_dir(11, GPIO_IN) ;
+    gpio_pull_up(11);
+    gpio_set_irq_enabled_with_callback(11, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
+
+
+
+
+    ////////////////////////////////////////////////////////////////////////
+    ///////////////////////// POWERING THE IMU  ////////////////////////////
+    gpio_init(28) ;
+    gpio_set_dir(28, GPIO_OUT) ;
+    gpio_put(28, 0);
+    sleep_ms(100);
+    gpio_put(28, 1);
 
     ////////////////////////////////////////////////////////////////////////
     ///////////////////////// I2C CONFIGURATION ////////////////////////////
@@ -486,6 +565,17 @@ int main() {
 
     // Start the channel
     pwm_set_mask_enabled((1u << slice_num));
+
+    ////////////////////////////////////////////////////////////////////////
+    ///////////////////////// BUTTON CONFIGURATION /////////////////////////
+    ////////////////////////////////////////////////////////////////////////
+    
+    gpio_init(25);
+
+    gpio_set_dir(25, GPIO_OUT);
+   
+
+    
 
    
     ////////////////////////////////////////////////////////////////////////
