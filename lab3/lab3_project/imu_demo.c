@@ -116,7 +116,7 @@ volatile fix15 accel_angle = 0;
 volatile fix15 gyro_angle_delta = 0;
 volatile fix15 complementary_angle = 0;
 volatile fix15 error = 0;
-volatile fix15 desired_angle = int2fix15(90);
+volatile fix15 desired_angle = int2fix15(0);
 volatile int count = 0;
 volatile fix15 old_error = 0;
 volatile fix15 sum_error = 0;
@@ -202,28 +202,26 @@ volatile int pid_term = 0;
 
 volatile int start_time = 0;
 volatile int mode = 0;
-volatile int time = 0;
+volatile int time = -1;
+
+volatile int boot = 0;
 
 // GPIO interrupt
 void gpio_callback(uint gpio, uint32_t event_mask) {
+    if(boot) {
+        if(event_mask & GPIO_IRQ_EDGE_FALL) {
+            gpio_put(25, 1);
+            desired_angle = 0;
+            //printf("falling edge\n");
+        } else if (event_mask & GPIO_IRQ_EDGE_RISE) {
+            mode = 1;
+            time = 0;
+            //printf("rising edge \n");
+        }
+    } else {
+        boot = 1;
+    }
     
-    // if(gpio == 11 && event_mask == GPIO_IRQ_EDGE_FALL) {
-    //     gpio_put(25, !gpio_get(25));
-    //     printf("enters isr \n");
-    // }
-    gpio_put(25, !gpio_get(25));
-    mode = 1;
-    desired_angle = 0;
-    
-    // desired_angle = int2fix15(90);
-    // // wait 5 seconds
-    // desired_angle = int2fix15(120);
-    // // wait 5 seconds
-    // desired_angle = int2fix15(90);
-    // // wait 5 seconds
-    // desired_angle = int2fix15(60);
-    // // wait 5 seconds
-    // desired_angle = int2fix15(90);
 }
 
 // Interrupt service routine
@@ -430,36 +428,6 @@ static PT_THREAD (protothread_draw(struct pt *pt))
     PT_END(pt) ;
 }
 
-// // User input thread. User can change draw speed
-// static PT_THREAD (protothread_serial(struct pt *pt))
-// {
-//     PT_BEGIN(pt) ;
-//     static char classifier ;
-//     static int test_in ;
-//     static float float_in ;
-//     while(1) {
-//         sprintf(pt_serial_out_buffer, "input a command: ");
-//         serial_write ;
-//         // spawn a thread to do the non-blocking serial read
-//         serial_read ;
-//         // convert input string to number
-//         sscanf(pt_serial_in_buffer,"%c", &classifier) ;
-
-//         // num_independents = test_in ;
-//         if (classifier=='t') {
-//             sprintf(pt_serial_out_buffer, "timestep: ");
-//             serial_write ;
-//             serial_read ;
-//             // convert input string to number
-//             sscanf(pt_serial_in_buffer,"%d", &test_in) ;
-//             if (test_in > 0) {
-//                 threshold = test_in ;
-//             }
-//         }
-//     }
-//     PT_END(pt) ;
-// }
-
 // User input thread
 static PT_THREAD (protothread_serial_motor(struct pt *pt))
 {
@@ -515,8 +483,8 @@ int main() {
     gpio_init(11) ;
     gpio_set_dir(11, GPIO_IN) ;
     gpio_pull_up(11);
-    gpio_set_irq_enabled_with_callback(11, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
-
+    //gpio_set_irq_enabled_with_callback(11, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
+    gpio_set_irq_enabled_with_callback(11, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
 
 
 
