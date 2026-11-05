@@ -60,9 +60,9 @@
 
 
 // Place the plots
-#define TOP_PLOT_BOTTOM 150
-#define BOTTOM_PLOT_BOTTOM 325
-#define ANGLE_PLOT_BOTTOM 440
+#define TOP_PLOT_BOTTOM 200
+#define BOTTOM_PLOT_BOTTOM 275
+#define ANGLE_PLOT_BOTTOM 435
 #define PLOT_WIDTH 530
 #define PI 3.1416
 
@@ -77,6 +77,7 @@ fix15 gx[PLOT_WIDTH] ;
 fix15 gy[PLOT_WIDTH] ;
 fix15 gz[PLOT_WIDTH] ;
 fix15 comp_angle_array[PLOT_WIDTH];
+fix15 des_angle_array[PLOT_WIDTH];
 int pwm_output_array[PLOT_WIDTH];
 int d_term_array[PLOT_WIDTH];
 int p_term_array[PLOT_WIDTH];
@@ -93,7 +94,7 @@ volatile int old_control = 10;
 char screentext[40];
 
 // draw speed
-volatile int threshold = 10 ;
+volatile int threshold = 40 ;
 
 // Some macros for max/min/abs
 #define min(a,b) ((a<b) ? a:b)
@@ -123,7 +124,7 @@ volatile fix15 sum_error = 0;
 volatile fix15 old_i_mul = 0;
 volatile fix15 i_mul = 0;
 
-volatile fix15 KP = float2fix15(90);
+volatile fix15 KP = float2fix15(200);
 volatile fix15 KD = float2fix15(30);
 volatile fix15 KI = float2fix15(16);
 
@@ -140,36 +141,36 @@ void drawAxes() {
     drawHLine(75, 200, 5, CYAN) ;
     drawHLine(75, 250, 5, CYAN) ;
     drawVLine(80, 150, 100, CYAN) ;
-    sprintf(screentext, "3000") ;
+    sprintf(screentext, "0") ;
     setCursor(50, 200) ;
     writeString(screentext) ;
-    sprintf(screentext, "6000") ;
+    sprintf(screentext, "3000") ;
     setCursor(50, 150) ;
     writeString(screentext) ;
-    sprintf(screentext, "0") ;
+    sprintf(screentext, "-3000") ;
     setCursor(50, 250) ;
     writeString(screentext) ;
-    sprintf(screentext, "PWM") ;
+    sprintf(screentext, "PID") ;
     setCursor(10, 200) ;
     writeString(screentext) ;
 
-    // // Draw top plot
-    // drawHLine(75, 25, 5, CYAN) ;
-    // drawHLine(75, 125, 5, CYAN) ;
-    // drawHLine(75, 75, 5, CYAN) ;
-    // drawVLine(80, 25, 100, CYAN) ;
-    // sprintf(screentext, "3000") ;
-    // setCursor(50, 75) ;
-    // writeString(screentext) ;
-    // sprintf(screentext, "6000") ;
-    // setCursor(45, 25) ;
-    // writeString(screentext) ;
-    // sprintf(screentext, "0") ;
-    // setCursor(45, 125) ;
-    // writeString(screentext) ;
-    // sprintf(screentext, "pid") ;
-    // setCursor(10, 75) ;
-    // writeString(screentext) ;
+    // Draw top plot
+    drawHLine(75, 25, 5, CYAN) ;
+    drawHLine(75, 125, 5, CYAN) ;
+    drawHLine(75, 75, 5, CYAN) ;
+    drawVLine(80, 25, 100, CYAN) ;
+    sprintf(screentext, "3000") ;
+    setCursor(50, 75) ;
+    writeString(screentext) ;
+    sprintf(screentext, "6000") ;
+    setCursor(45, 25) ;
+    writeString(screentext) ;
+    sprintf(screentext, "0") ;
+    setCursor(45, 125) ;
+    writeString(screentext) ;
+    sprintf(screentext, "control") ;
+    setCursor(0, 75) ;
+    writeString(screentext) ;
 
     // Draw angle plot
     drawHLine(75, 275, 5, CYAN) ;
@@ -276,6 +277,14 @@ void on_pwm_wrap() {
         old_i_mul = i_mul;
     }
 
+    // Make sure to integrator term doesn't go up too mcuh
+    if (sum_error > int2fix15(200)){
+        sum_error = int2fix15(200);
+    } 
+    if (sum_error < int2fix15(-200)){
+        sum_error = int2fix15(-200);
+    }
+
     // Multiplying each term with their coefficients
     i_term = multfix15(KI, sum_error);
     d_term = multfix15(KD, gyro[1]);
@@ -325,6 +334,7 @@ void on_pwm_wrap() {
 
         // Replace oldest data in angle arrays with new sample
         comp_angle_array[head] = complementary_angle;
+        des_angle_array[head] = desired_angle;
         pwm_output_array[head] = control;
         p_term_array[head] = fix2int15(p_term);
         d_term_array[head] = fix2int15(d_term);
@@ -386,17 +396,20 @@ static PT_THREAD (protothread_draw(struct pt *pt))
             // draft thing for angle plot
             drawPixel(LEFT_EDGE + i, (ANGLE_PLOT_BOTTOM - 
                 (int)(NEW_RANGE*((float)((fix2float15(comp_angle_array[start])*ANGLE_SCALE)-OLD_MIN)/OLD_RANGE))), WHITE) ;
+            drawPixel(LEFT_EDGE + i, (ANGLE_PLOT_BOTTOM - 
+                (int)(NEW_RANGE*((float)(((fix2float15(des_angle_array[start])-25)*ANGLE_SCALE)-OLD_MIN)/OLD_RANGE))), BLUE) ;
 
-            // draft thing for pid output plot
-            
-            drawPixel(LEFT_EDGE + i, (BOTTOM_PLOT_BOTTOM - 
-                (int)(NEW_RANGE*((float)(((p_term_array[start])*0.05)-OLD_MIN)/OLD_RANGE))), GREEN) ;
-            drawPixel(LEFT_EDGE + i, (BOTTOM_PLOT_BOTTOM - 
-                (int)(NEW_RANGE*((float)(((d_term_array[start])*0.05)-OLD_MIN)/OLD_RANGE))), RED) ;
-            drawPixel(LEFT_EDGE + i, (BOTTOM_PLOT_BOTTOM - 
+            // draft thing for pwd output plot
+            drawPixel(LEFT_EDGE + i, (TOP_PLOT_BOTTOM - 
                 (int)(NEW_RANGE*((float)(((pwm_output_array[start])*0.05)-OLD_MIN)/OLD_RANGE))), WHITE) ;
+            
+            // draft thing for pid output plot
             drawPixel(LEFT_EDGE + i, (BOTTOM_PLOT_BOTTOM - 
-                (int)(NEW_RANGE*((float)(((i_term_array[start])*0.05)-OLD_MIN)/OLD_RANGE))), PINK) ;
+                (int)(NEW_RANGE*((float)(((p_term_array[start])*0.02)-OLD_MIN)/OLD_RANGE))), GREEN) ;
+            drawPixel(LEFT_EDGE + i, (BOTTOM_PLOT_BOTTOM - 
+                (int)(NEW_RANGE*((float)(((d_term_array[start])*0.02)-OLD_MIN)/OLD_RANGE))), RED) ;
+            drawPixel(LEFT_EDGE + i, (BOTTOM_PLOT_BOTTOM - 
+                (int)(NEW_RANGE*((float)(((i_term_array[start])*0.03)-OLD_MIN)/OLD_RANGE))), PINK) ;
 
             start = ((start+1)==PLOT_WIDTH) ? 0 : (start+1) ;
         }
@@ -405,23 +418,23 @@ static PT_THREAD (protothread_draw(struct pt *pt))
         // printf("Control: %d\n", control);
 
         sprintf(comp_angle_buffer, "Comp angle: %4.1f", (fix2float15(complementary_angle)+25));
-        drawTextVGA437(10, 450, comp_angle_buffer, WHITE, BLACK) ;
+        drawTextVGA437(10, 425, comp_angle_buffer, WHITE, BLACK) ;
         sprintf(des_angle_buffer, "Desired angle: %4.1f", (fix2float15(desired_angle)));
-        drawTextVGA437(10, 400, des_angle_buffer, WHITE, BLACK) ;
+        drawTextVGA437(10, 400, des_angle_buffer, BLUE, BLACK) ;
         sprintf(error_buffer, "Error: %4.1f", fix2float15(error));
-        drawTextVGA437(150, 450, error_buffer, WHITE, BLACK) ;
+        drawTextVGA437(10, 450, error_buffer, BLUE, BLACK) ;
         sprintf(control_buffer, "Control: %d", control);
-        drawTextVGA437(290, 450, control_buffer, WHITE, BLACK) ;
+        drawTextVGA437(390, 450, control_buffer, WHITE, BLACK) ;
         sprintf(kp_buffer, "KP: %4.1f", fix2float15(KP));
-        drawTextVGA437(410, 450, kp_buffer, WHITE, BLACK) ;
+        drawTextVGA437(200, 450, kp_buffer, GREEN, BLACK) ;
         sprintf(kd_buffer, "KD: %4.1f", fix2float15(KD));
-        drawTextVGA437(410, 400, ki_buffer, WHITE, BLACK) ;
+        drawTextVGA437(200, 400, ki_buffer, PINK, BLACK) ;
         sprintf(ki_buffer, "KI: %4.1f", fix2float15(KI));
-        drawTextVGA437(510, 450, kd_buffer, WHITE, BLACK) ;
-        sprintf(delta_error_buffer, "Delta Error: %4.1f", fix2float15(error - old_error));
-        drawTextVGA437(600, 450, delta_error_buffer, WHITE, BLACK) ;
-        sprintf(pid_buffer, "PID Term: %d", pid_term);
-        drawTextVGA437(290, 400, pid_buffer, WHITE, BLACK) ;
+        drawTextVGA437(200, 425, kd_buffer, RED, BLACK) ;
+        // sprintf(delta_error_buffer, "Delta Error: %4.1f", fix2float15(error - old_error));
+        // drawTextVGA437(600, 450, delta_error_buffer, WHITE, BLACK) ;
+        // sprintf(pid_buffer, "PID Term: %d", pid_term);
+        // drawTextVGA437(290, 400, pid_buffer, WHITE, BLACK) ;
         
     }
 
@@ -495,6 +508,7 @@ int main() {
     gpio_put(28, 0);
     sleep_ms(100);
     gpio_put(28, 1);
+    sleep_ms(250);
 
     ////////////////////////////////////////////////////////////////////////
     ///////////////////////// I2C CONFIGURATION ////////////////////////////
