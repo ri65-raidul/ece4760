@@ -19,6 +19,9 @@
  *  - GPIO 9 ---> MPU6050 SCL
  *  - 3.3v ---> MPU6050 VCC
  *  - RP2040 GND ---> MPU6050 GND
+ *  - GPIO 11 ---> Push button
+ *  - GPIO 4 ---> PWM Output
+ *  - GPIO 28 ---> IMU boot
  */
 
 
@@ -45,7 +48,6 @@
 #include "mpu6050.h"
 #include "pt_cornell_rp2040_v1_4.h"
 
-//#define ISR_GPIO 2
 
 // We will start drawing at column 81
 #define LEFT_EDGE 81 
@@ -113,6 +115,7 @@ static struct pt_sem vga_semaphore ;
 
 uint slice_num ;
 
+// Variables for data calculations
 volatile fix15 accel_angle = 0;
 volatile fix15 gyro_angle_delta = 0;
 volatile fix15 complementary_angle = 0;
@@ -124,11 +127,21 @@ volatile fix15 sum_error = 0;
 volatile fix15 old_i_mul = 0;
 volatile fix15 i_mul = 0;
 
+// Default PID parameters
 volatile fix15 KP = float2fix15(200);
 volatile fix15 KD = float2fix15(30);
 volatile fix15 KI = float2fix15(16);
 
-char angle_buffer[64];
+// Display buffers
+char comp_angle_buffer[64];
+char des_angle_buffer[64];
+char error_buffer[64];
+char control_buffer[64];
+char kp_buffer[64];
+char kd_buffer[64];
+char ki_buffer[64];
+char delta_error_buffer[64];
+char pid_buffer[64];
 
 
 void drawAxes() {
@@ -189,35 +202,31 @@ void drawAxes() {
     sprintf(screentext, "angle") ;
     setCursor(10, 325) ;
     writeString(screentext) ;
-
-    // // Write complementary angle
-    // sprintf(angle_buffer, "Complementary Angle: %4.1f", complementary_angle);
-    // drawTextVGA437(260, 450, angle_buffer, WHITE, BLACK) ;
 }
 
+
 volatile int throttle = 10 ;
+
+// PID terms
 volatile fix15 d_term = 0;
 volatile fix15 p_term = 0;
 volatile fix15 i_term = 0;
 volatile int pid_term = 0;
 
+// Variables for angle sequence
 volatile int start_time = 0;
 volatile int mode = 0;
 volatile int time = -1;
-
 volatile int boot = 0;
 
 // GPIO interrupt
 void gpio_callback(uint gpio, uint32_t event_mask) {
     if(boot) {
         if(event_mask & GPIO_IRQ_EDGE_FALL) {
-            gpio_put(25, 1);
             desired_angle = 0;
-            //printf("falling edge\n");
         } else if (event_mask & GPIO_IRQ_EDGE_RISE) {
             mode = 1;
             time = 0;
-            //printf("rising edge \n");
         }
     } else {
         boot = 1;
@@ -232,11 +241,12 @@ void on_pwm_wrap() {
     pwm_clear_irq(pwm_gpio_to_slice_num(4));
     gpio_put(14, !gpio_get(14)) ;
 
+    
     if (control!=old_control) {
         old_control = control ;
         pwm_set_chan_level(slice_num, PWM_CHAN_A, control);
     }
-    //pwm_set_chan_level(slice_num, PWM_CHAN_A, 600);
+    
 
     if (old_error != error) {
         old_error = error;
@@ -252,7 +262,7 @@ void on_pwm_wrap() {
     int filtered_ax;
     int filtered_az;
     filtered_ax = filtered_ax + ((acceleration[0] - filtered_ax) >> 2);
-    filtered_az = filtered_az + ((acceleration[2] - filtered_az) >> 2); // This 6 is tunable
+    filtered_az = filtered_az + ((acceleration[2] - filtered_az) >> 2);
     
     if (filtered_az < int2fix15(0) && desired_angle > int2fix15(90)){
         filtered_az = multfix15(int2fix15(-1), filtered_az);
@@ -265,8 +275,6 @@ void on_pwm_wrap() {
     // Complementary angle calc
     complementary_angle = multfix15(complementary_angle + gyro_angle_delta, zeropt999) + multfix15(accel_angle, zeropt001);
 
-    //complementary_angle += int2fix15(15);
-
     // Calculate the error
     error = desired_angle - complementary_angle - int2fix15(25);
 
@@ -277,7 +285,7 @@ void on_pwm_wrap() {
         old_i_mul = i_mul;
     }
 
-    // Make sure to integrator term doesn't go up too mcuh
+    // Make sure to integrator term doesn't go up too much
     if (sum_error > int2fix15(200)){
         sum_error = int2fix15(200);
     } 
@@ -299,6 +307,7 @@ void on_pwm_wrap() {
     } 
     count++;
 
+    // Angle sequence logic
     if (mode) {
         if (time == 0){
             desired_angle = int2fix15(90);
@@ -346,15 +355,7 @@ void on_pwm_wrap() {
     }
 }
 
-char comp_angle_buffer[64];
-char des_angle_buffer[64];
-char error_buffer[64];
-char control_buffer[64];
-char kp_buffer[64];
-char kd_buffer[64];
-char ki_buffer[64];
-char delta_error_buffer[64];
-char pid_buffer[64];
+
 static PT_THREAD (protothread_draw(struct pt *pt))
 {
     PT_BEGIN(pt) ;
@@ -379,31 +380,18 @@ static PT_THREAD (protothread_draw(struct pt *pt))
         // Plot data oldest-->newest
         start = head ;
         for (i = 0; i < PLOT_WIDTH; i++) {
-            // drawPixel(LEFT_EDGE + i, (BOTTOM_PLOT_BOTTOM -
-            //     (int)(NEW_RANGE*((float)((fix2float15(ax[start])*ACCEL_SCALE)-OLD_MIN)/OLD_RANGE))), WHITE) ;
-            // drawPixel(LEFT_EDGE + i, (BOTTOM_PLOT_BOTTOM -
-            //     (int)(NEW_RANGE*((float)((fix2float15(ay[start])*ACCEL_SCALE)-OLD_MIN)/OLD_RANGE))), RED) ;
-            // drawPixel(LEFT_EDGE + i, (BOTTOM_PLOT_BOTTOM -
-            //     (int)(NEW_RANGE*((float)((fix2float15(az[start])*ACCEL_SCALE)-OLD_MIN)/OLD_RANGE))), GREEN) ;
-            // drawPixel(LEFT_EDGE + i, (TOP_PLOT_BOTTOM -
-            //     (int)(NEW_RANGE*((float)((fix2float15(gx[start]))-OLD_MIN)/OLD_RANGE))), WHITE) ;
-            // drawPixel(LEFT_EDGE + i, (TOP_PLOT_BOTTOM -
-            //     (int)(NEW_RANGE*((float)((fix2float15(gy[start]))-OLD_MIN)/OLD_RANGE))), RED) ;
-            // drawPixel(LEFT_EDGE + i, (TOP_PLOT_BOTTOM -
-            //     (int)(NEW_RANGE*((float)((fix2float15(gz[start]))-OLD_MIN)/OLD_RANGE))), GREEN) ;
-
-
-            // draft thing for angle plot
+            
+            // Draw the angle plot
             drawPixel(LEFT_EDGE + i, (ANGLE_PLOT_BOTTOM - 
                 (int)(NEW_RANGE*((float)((fix2float15(comp_angle_array[start])*ANGLE_SCALE)-OLD_MIN)/OLD_RANGE))), WHITE) ;
             drawPixel(LEFT_EDGE + i, (ANGLE_PLOT_BOTTOM - 
                 (int)(NEW_RANGE*((float)(((fix2float15(des_angle_array[start])-25)*ANGLE_SCALE)-OLD_MIN)/OLD_RANGE))), BLUE) ;
 
-            // draft thing for pwd output plot
+            // Draw the PWM/control value
             drawPixel(LEFT_EDGE + i, (TOP_PLOT_BOTTOM - 
                 (int)(NEW_RANGE*((float)(((pwm_output_array[start])*0.05)-OLD_MIN)/OLD_RANGE))), WHITE) ;
             
-            // draft thing for pid output plot
+            // Draw the PID terms
             drawPixel(LEFT_EDGE + i, (BOTTOM_PLOT_BOTTOM - 
                 (int)(NEW_RANGE*((float)(((p_term_array[start])*0.02)-OLD_MIN)/OLD_RANGE))), GREEN) ;
             drawPixel(LEFT_EDGE + i, (BOTTOM_PLOT_BOTTOM - 
@@ -413,10 +401,9 @@ static PT_THREAD (protothread_draw(struct pt *pt))
 
             start = ((start+1)==PLOT_WIDTH) ? 0 : (start+1) ;
         }
-        // printf("Complementary Angle: %d\n", fix2int15(complementary_angle));
-        // printf("Error: %d\n", fix2int15(error));
-        // printf("Control: %d\n", control);
 
+        
+        // Print values at the bottom of the VGA display
         sprintf(comp_angle_buffer, "Comp angle: %4.1f", (fix2float15(complementary_angle)+25));
         drawTextVGA437(10, 425, comp_angle_buffer, WHITE, BLACK) ;
         sprintf(des_angle_buffer, "Desired angle: %4.1f", (fix2float15(desired_angle)));
@@ -431,10 +418,6 @@ static PT_THREAD (protothread_draw(struct pt *pt))
         drawTextVGA437(200, 400, ki_buffer, PINK, BLACK) ;
         sprintf(ki_buffer, "KI: %4.1f", fix2float15(KI));
         drawTextVGA437(200, 425, kd_buffer, RED, BLACK) ;
-        // sprintf(delta_error_buffer, "Delta Error: %4.1f", fix2float15(error - old_error));
-        // drawTextVGA437(600, 450, delta_error_buffer, WHITE, BLACK) ;
-        // sprintf(pid_buffer, "PID Term: %d", pid_term);
-        // drawTextVGA437(290, 400, pid_buffer, WHITE, BLACK) ;
         
     }
 
@@ -453,9 +436,11 @@ static PT_THREAD (protothread_serial_motor(struct pt *pt))
         serial_write ;
         // spawn a thread to do the non-blocking serial read
         serial_read ;
-        // convert input string to number
+        // convert input strings to numbers
         sscanf(pt_serial_in_buffer,"%d, %f", &test_in, &test_in1) ;
         number = test_in ;
+
+        // Changes the appropriate parameters based on user input
         if (number == 1) {
             desired_angle = float2fix15(test_in1);
         }
@@ -493,12 +478,6 @@ int main() {
     // Initialize VGA
     initVGA() ;
 
-    gpio_init(11) ;
-    gpio_set_dir(11, GPIO_IN) ;
-    gpio_pull_up(11);
-    //gpio_set_irq_enabled_with_callback(11, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
-    gpio_set_irq_enabled_with_callback(11, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
-
 
 
     ////////////////////////////////////////////////////////////////////////
@@ -523,8 +502,7 @@ int main() {
     ////////////////////////////////////////////////////////////////////////
     ///////////////////////// PWM CONFIGURATION ////////////////////////////
     ////////////////////////////////////////////////////////////////////////
-    // Tell GPIO's 4,5 that they allocated to the PWM
-    //gpio_set_function(5, GPIO_FUNC_PWM);
+    // Tell GPIO 4 that they allocated to the PWM
     gpio_set_function(4, GPIO_FUNC_PWM);
 
     // Find out which PWM slice is connected to GPIO 5 (it's slice 2, same for 4)
@@ -552,11 +530,13 @@ int main() {
     ///////////////////////// BUTTON CONFIGURATION /////////////////////////
     ////////////////////////////////////////////////////////////////////////
     
-    gpio_init(25);
-
-    gpio_set_dir(25, GPIO_OUT);
    
-
+    gpio_init(11) ;
+    gpio_set_dir(11, GPIO_IN) ;
+    gpio_pull_up(11);
+   
+    gpio_set_irq_enabled_with_callback(11, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
+    
     
 
    
@@ -572,8 +552,7 @@ int main() {
     gpio_set_dir(14, GPIO_OUT) ;
     gpio_put(14, 0) ;
 
-    //pt_add_thread(protothread_serial) ;
-    // printf("Debug-core0\n");
+
     pt_add_thread(protothread_serial_motor) ;
     pt_schedule_start ;
 
